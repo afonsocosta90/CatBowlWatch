@@ -1,0 +1,21 @@
+# Model artifacts (large binaries — push to HF or release assets)
+models/*.pt
+models/*.onnx
+models/*.engine
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# C++ build
+build/
+*.o
+*.a
+
+# Env / secrets
+.env
+
+# macOS
+.DS_Store
