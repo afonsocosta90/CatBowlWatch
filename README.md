@@ -8,17 +8,19 @@ Built as a portfolio piece demonstrating end-to-end ML-to-C++ edge deployment: d
 
 ---
 
-## Demo (30-second quick-start)
+## Demo (~20-second quick-start)
 
 ```bash
 # Requires Docker and a valid .env with TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
 git clone https://github.com/YOUR_HANDLE/catbowlwatch
 cd catbowlwatch
-cp .env.example .env          # fill in your Telegram credentials
+cp demo/.env.example .env     # fill in your Telegram credentials
 docker compose -f docker/demo.yml up
 ```
 
-The demo loops `data/videos/sample_video.mp4`, runs inference, and fires a real Telegram notification. No Jetson needed.
+The demo loops `data/videos/sample_video.mp4` (empty bowl visible from frame 1), runs inference with `DEBOUNCE_SECONDS=8`, and fires a real Telegram photo notification. **Notification arrives ~15 seconds after the service starts.** No Jetson needed.
+
+> Production deployments use the 60 s debounce default. The demo override is explicit — see `demo/.env.example`.
 
 ---
 
@@ -26,13 +28,13 @@ The demo loops `data/videos/sample_video.mp4`, runs inference, and fires a real 
 
 ```mermaid
 flowchart TD
-    CAM["CSI IMX219\n(Jetson) / Video file\n(Laptop)"]
-    CAPTURE["Frame Capture\nGStreamer (Jetson) / OpenCV VideoCapture (Laptop)"]
-    INFER["YOLOv8n Inference\nONNX Runtime (dev) / TensorRT FP16 (prod)"]
-    CLASSIFY["Bowl Classifier\nDetect both bowls → empty / not_empty"]
-    DEBOUNCE["Debounce Logic\n60 s continuous empty per bowl"]
-    NOTIFY["Telegram Notifier\nPhoto + text → phone"]
-    API["C++17 HTTP Service\ncpp-httplib /status  /photo"]
+    CAM["CSI IMX219<br/>(Jetson) / Video file<br/>(Laptop)"]
+    CAPTURE["Frame Capture<br/>GStreamer (Jetson) / OpenCV (Laptop)"]
+    INFER["YOLOv8n Inference<br/>ONNX Runtime (dev) / TensorRT FP16 (prod)"]
+    CLASSIFY["Bowl Classifier<br/>Detect both bowls — empty / not_empty"]
+    DEBOUNCE["Debounce Logic<br/>60 s continuous empty per bowl"]
+    NOTIFY["Telegram Notifier<br/>Photo + text to phone"]
+    API["C++17 HTTP Service<br/>cpp-httplib /status  /photo"]
 
     CAM --> CAPTURE --> INFER --> CLASSIFY --> DEBOUNCE
     DEBOUNCE -->|threshold crossed| NOTIFY
@@ -52,7 +54,7 @@ flowchart TD
 | Service | C++17 + cpp-httplib | Same binary, systemd unit |
 | Notification | Telegram Bot API | Same |
 | Low-light | Brightness sim (software) | IR floodlight + GPIO trigger |
-| OS | macOS / Ubuntu 22.04 | JetPack 5.x |
+| OS | macOS / Ubuntu 22.04 | JetPack TBD (B01 → 4.6.4; Orin Nano → 6.x) |
 
 ---
 
@@ -85,7 +87,7 @@ catbowlwatch/
 
 | # | Phase | Runs on | Status |
 |---|---|---|---|
-| 1 | Data Collection | Laptop | Planned |
+| 1 | Data Collection | Laptop | **In Progress** |
 | 2 | Training Pipeline | Laptop / Colab | Planned |
 | 3 | Inference Service (ONNX) | Laptop | Planned |
 | 4 | Notification | Laptop | Planned |

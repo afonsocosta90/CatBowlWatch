@@ -1,7 +1,7 @@
 # CatBowlWatch — Architecture
 
-> **Status:** Phase 0 — Documentation.
-> **Last updated:** 2026-05-13
+> **Status:** Phase 1 — Data Collection (in progress).
+> **Last updated:** 2026-05-18
 
 ---
 
@@ -10,18 +10,16 @@
 All inference, debounce logic, and notification run on a single device. No cloud component except the Telegram Bot API (outbound only).
 
 ```mermaid
-C4Context
-    title CatBowlWatch — System Context
+flowchart LR
+    camera["📷 CSI IMX219 Camera<br/>(live video feed)"]
+    cbw["🖥️ CatBowlWatch<br/>Edge ML service<br/>Jetson Nano / Laptop"]
+    telegram["✉️ Telegram Bot API<br/>(external)"]
+    owner["🧑 Cat Owner<br/>(phone)"]
 
-    Person(owner, "Cat Owner", "Receives Telegram alerts on phone")
-    System(cbw, "CatBowlWatch", "Edge ML service on Jetson Nano / Laptop")
-    System_Ext(telegram, "Telegram Bot API", "Delivers photo + text notification")
-    System_Ext(camera, "CSI IMX219 Camera", "Live video feed")
-
-    Rel(camera, cbw, "Raw frames")
-    Rel(cbw, telegram, "POST sendPhoto + sendMessage", "HTTPS")
-    Rel(telegram, owner, "Push notification")
-    Rel(owner, cbw, "GET /status, GET /photo", "HTTP LAN")
+    camera -->|"Raw frames"| cbw
+    cbw -->|"POST sendPhoto HTTPS"| telegram
+    telegram -->|"Push notification"| owner
+    owner -->|"GET /status GET /photo LAN"| cbw
 ```
 
 ---
@@ -31,27 +29,27 @@ C4Context
 ```mermaid
 flowchart TD
     subgraph Capture["Frame Capture Layer"]
-        A1["GStreamer nvarguscamerasrc\n(Jetson — Phase 5)"]
-        A2["OpenCV VideoCapture\n(Laptop — Phases 1-4)"]
+        A1["GStreamer nvarguscamerasrc<br/>(Jetson — Phase 5)"]
+        A2["OpenCV VideoCapture<br/>(Laptop — Phases 1-4)"]
     end
 
     subgraph Inference["Inference Layer"]
-        B1["Preprocessor\nResize 640x640, normalize"]
-        B2["YOLOv8n\nONNX Runtime CPU (dev)\nTensorRT FP16 (prod)"]
-        B3["Postprocessor\nNMS, conf >= 0.5, class labels"]
+        B1["Preprocessor<br/>Resize 640x640, normalize"]
+        B2["YOLOv8n<br/>ONNX Runtime CPU (dev)<br/>TensorRT FP16 (prod)"]
+        B3["Postprocessor<br/>NMS, conf >= 0.5, class labels"]
     end
 
     subgraph State["State and Debounce Layer"]
-        C1["Bowl State Tracker\nPer-bowl: state, timer, last_seen_ts"]
-        C2["Debounce Engine\n60s continuous empty -> fire\n300s cooldown per bowl"]
+        C1["Bowl State Tracker<br/>Per-bowl: state, timer, last_seen_ts"]
+        C2["Debounce Engine<br/>60s continuous empty -> fire<br/>300s cooldown per bowl"]
     end
 
     subgraph Service["C++17 HTTP Service"]
-        D1["cpp-httplib\nGET /status  GET /photo"]
+        D1["cpp-httplib<br/>GET /status  GET /photo"]
     end
 
     subgraph Notify["Notification Layer"]
-        E1["Telegram Notifier\nPOST sendPhoto + sendMessage"]
+        E1["Telegram Notifier<br/>POST sendPhoto + sendMessage"]
     end
 
     A1 --> B1
@@ -102,7 +100,11 @@ sequenceDiagram
 - On Jetson: low-light condition also triggers GPIO IR floodlight.
 
 ### 4.3 YOLOv8n Inference
-- **Output:** Raw ONNX output `[1, N, 6]` — columns are `[cx, cy, w, h, confidence, class_id]`.
+- **Output:** Raw ONNX output `[1, 6, 8400]` (640×640 input, 2 classes). The first dimension is batch, the second is `4 bbox + num_classes`, the third is the number of anchors.
+  - Postprocessor **must** transpose to `[8400, 6]` before iterating.
+  - Columns after transpose: `[cx, cy, w, h, bowl_empty_score, bowl_not_empty_score]`.
+  - There is **no single "confidence" column** — compute: `confidence = max(col[4], col[5])`, `class_id = argmax(col[4], col[5])`.
+  - Verify actual shape before writing C++ postprocessor: `python -c "import onnxruntime as ort, numpy as np; s=ort.InferenceSession('models/catbowlwatch.onnx'); print(s.run(None,{s.get_inputs()[0].name:np.zeros((1,3,640,640),dtype='f4')})[0].shape)"`
 - **Backend contract:** Abstract `InferenceBackend` interface with two concrete implementations:
   - `OnnxBackend` — wraps ONNX Runtime session (laptop, CPU).
   - `TrtBackend` — wraps TensorRT execution context (Jetson, FP16).
@@ -126,6 +128,7 @@ struct BowlState {
 ```
 
 - If a bowl is not detected in a frame, state is held for up to `DETECTION_HOLD_FRAMES` (default: 5) frames before being marked `undetected`.
+- **Bowl registration warm-up:** Both bowls must be detected simultaneously in ≥ 3 of the first 30 processed frames before debounce timers are armed. Until registered, `/status` reports `"registration_pending": true` and no alerts fire. This prevents startup race conditions where a single detection is assigned the wrong bowl identity via the x-coordinate heuristic.
 
 ### 4.6 Debounce Engine
 
@@ -149,12 +152,15 @@ GET /status  →  200 OK  application/json
     {"id": "bowl_1", "state": "empty",     "empty_for_s": 42, "confidence": 0.87},
     {"id": "bowl_2", "state": "not_empty", "empty_for_s": 0,  "confidence": 0.93}
   ],
+  "registration_pending": false,
   "fps": 14.2,
   "uptime_s": 3820
 }
 
 GET /photo  →  200 OK  image/jpeg  (latest annotated frame)
 ```
+
+- **Threading:** `cpp-httplib` runs in thread-pool mode (`Server::new_task_queue`, pool size 4). The HTTP server thread and the inference loop share `latest_frame` via a `std::mutex`-protected `cv::Mat`. `GET /photo` acquires the lock, clones the frame, releases the lock immediately, then JPEG-encodes outside the lock. This prevents inference stalls on slow HTTP clients.
 
 ### 4.8 Telegram Notifier
 - Sends `POST /sendPhoto` (multipart/form-data) with JPEG + caption.
@@ -172,24 +178,44 @@ GET /photo  →  200 OK  image/jpeg  (latest annotated frame)
 | 3 | Set `MODEL_PATH=/models/catbowlwatch.engine` | same |
 | 4 | `systemctl restart catbowlwatch` | Jetson |
 
-No C++ code changes. `TrtBackend` is compiled into the binary from day one.
+No C++ code changes at swap time.
+
+**Conditional compilation:** `TrtBackend` requires TensorRT headers (`NvInfer.h`) which are not available on macOS or Ubuntu without a GPU. The CMakeLists.txt must gate it behind an option:
+
+```cmake
+option(WITH_TENSORRT "Build TensorRT backend (requires NvInfer.h)" OFF)
+```
+
+```cpp
+// inference/TrtBackend.h
+#pragma once
+#ifdef WITH_TENSORRT
+#include <NvInfer.h>
+// ... implementation
+#endif // WITH_TENSORRT
+```
+
+Laptop builds: `cmake -DWITH_TENSORRT=OFF ..` (default).
+Jetson builds: `cmake -DWITH_TENSORRT=ON ..`.
 
 ---
 
-## 6. Low-Light Architecture
+## 6. Low-Light Adaptive Preprocessing
 
 ```mermaid
 flowchart LR
-    FRAME["Raw frame"] --> BRIGHT{"mean brightness\n< threshold?"}
+    FRAME["Raw frame"] --> BRIGHT{"mean brightness<br/>< threshold?"}
     BRIGHT -->|No| NORM["Normal inference path"]
-    BRIGHT -->|Yes, laptop| IRSIM["IR Simulation\ngrayscale + contrast stretch"]
-    BRIGHT -->|Yes, Jetson| GPIO["GPIO IR floodlight ON\n+ IR simulation transform"]
+    BRIGHT -->|Yes, laptop| IRSIM["Low-light transform<br/>grayscale + CLAHE"]
+    BRIGHT -->|Yes, Jetson| GPIO["GPIO IR floodlight ON<br/>+ low-light transform"]
     IRSIM --> INF["Inference"]
     GPIO --> INF
     NORM --> INF
 ```
 
-The brightness threshold and IR simulation parameters are matched to the training-time augmentation pipeline so inference and training see the same distribution.
+The brightness threshold and low-light transform parameters are matched to the training-time augmentation pipeline so inference and training see the same distribution.
+
+**Note on terminology:** This is a brightness-triggered single-channel preprocessing transform, not sensor fusion. "Fusion" implies combining information from multiple independent sensors. Use the term "low-light adaptive preprocessing" when describing this feature.
 
 ---
 

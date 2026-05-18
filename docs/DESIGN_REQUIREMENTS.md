@@ -1,7 +1,7 @@
 # CatBowlWatch — Design Requirements
 
-> **Status:** Phase 0 — Documentation. No code written yet.
-> **Last updated:** 2026-05-13
+> **Status:** Phase 1 — Data Collection (in progress).
+> **Last updated:** 2026-05-18
 
 ---
 
@@ -40,6 +40,8 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 
 ### FR-6 — Demo Mode
 - `docker compose up` loops `data/videos/sample_video.mp4`, fires a real Telegram alert, requires no Jetson hardware.
+- Demo mode overrides `DEBOUNCE_SECONDS=8` (set in `demo/.env.example`). Production default is 60 s. The `sample_video.mp4` must show a bowl empty from the first frame. Telegram notification arrives ~15 s after `docker compose up`.
+- The demo debounce override is explicit and documented — not a hidden hack. Production deployments use the 60 s default via the systemd unit env block.
 
 ---
 
@@ -48,7 +50,7 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 | ID | Requirement | Target |
 |---|---|---|
 | NFR-1 | Inference latency (ONNX CPU, laptop) | ≤ 200 ms / frame |
-| NFR-2 | Inference latency (TensorRT FP16, Jetson) | ≤ 33 ms / frame (≥ 30 FPS) |
+| NFR-2 | Inference latency (TensorRT FP16, Jetson) | ≥ 20 FPS @ 640×640; or ≥ 30 FPS @ 416×416. (YOLOv8n TRT FP16 on Jetson Nano 4GB measures 12–18 FPS at 640×640 — use 416×416 if 30 FPS is required. A stationary cat bowl does not need >20 FPS.) |
 | NFR-3 | False-positive alert rate | < 1 per day under normal lighting |
 | NFR-4 | Service memory footprint (Jetson) | ≤ 512 MB RSS |
 | NFR-5 | Cold-start time (service ready, Jetson) | ≤ 10 s |
@@ -61,13 +63,15 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 
 | Item | Specification |
 |---|---|
-| Target SBC | NVIDIA Jetson Nano 4GB (JetPack 5.x) |
+| Target SBC | NVIDIA Jetson Nano 4GB (**JetPack version TBD** — confirm with `cat /etc/nv_tegra_release` on receipt. Original B01 → JetPack 4.6.4 / CUDA 10.2 / Ubuntu 18.04. Orin Nano → JetPack 6.x / CUDA 12.x / Ubuntu 22.04.) |
 | Camera | Raspberry Pi CSI IMX219 |
 | Inference runtime (prod) | TensorRT 8.x, FP16 |
 | Inference runtime (dev) | ONNX Runtime ≥ 1.17, CPU |
 | IR illumination | IR floodlight, GPIO-triggered at low ambient brightness |
 | Network | Wi-Fi or Ethernet; Telegram API reachable |
 | Power | 5V/4A barrel jack |
+| C++ logging | spdlog ≥ 1.12 (header-only, MIT) — required for structured service logging on headless Jetson |
+| HTTP client (notification) | libcurl ≥ 7.68 — required for Telegram `POST /sendPhoto` multipart from C++ (or use Python subprocess — see ARCHITECTURE.md §4.8) |
 
 **Laptop-first constraint:** Until the Jetson arrives, every component — inference, notification, demo — must run on a development laptop (macOS or Ubuntu 22.04) with no GPU required.
 
@@ -81,8 +85,17 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 | Export format (dev) | ONNX opset 17 | Portable, CPU-runnable, no NVIDIA dependency during development |
 | Export format (prod) | TensorRT engine (FP16) | 3–5× speedup over ONNX on Jetson; required to meet NFR-2 |
 | Classes | `bowl_empty`, `bowl_not_empty` | Detection + classification in one pass; no separate classifier network |
-| Input resolution | 640 × 640 | YOLOv8n default; reducible to 416 × 416 if Jetson latency is tight |
-| Training data (Phase 1) | Non-representative | Laptop-first; retrained with real data at Phase 5 |
+| Input resolution | 640 × 640 | YOLOv8n default; **change to 416 × 416 if 30 FPS is required** — see NFR-2 |
+| Training data (Phase 1) | Representative of real deployment | Include photos of your actual bowls from day 1. Non-representative data produces a fake mAP score. Supplement with Roboflow Universe images but anchor the val set on your real setup. |
+
+### ONNX/TRT Parity Tolerance
+
+TRT FP16 introduces quantization error. The parity test in `tests/` must define an explicit tolerance — otherwise the test is meaningless.
+
+**Acceptance criteria:** On a 50-image held-out validation set:
+- Per-image IoU between ONNX and TRT matched detections: **> 0.90**
+- Class agreement (same `class_id` for the same anchor): **> 98%**
+- mAP50 delta (ONNX vs TRT): **≤ 3 pp** (e.g., ONNX 0.82 → TRT 0.79 is acceptable)
 
 ### Why YOLOv8n and not something smaller?
 
@@ -126,15 +139,17 @@ Per-bowl cooldown: 300 s after each alert. Configurable via `ALERT_COOLDOWN_SECO
 
 ---
 
-## 7. Low-Light Handling
+## 7. Low-Light Adaptive Preprocessing
 
 | Mode | Trigger | Action |
 |---|---|---|
 | Normal | Ambient brightness > threshold | Standard inference |
-| Low-light (laptop sim) | Mean frame brightness < threshold | Grayscale + contrast stretch (IR simulation) |
-| Low-light (Jetson prod) | Brightness heuristic | GPIO IR floodlight ON + same transform |
+| Low-light (laptop) | Mean frame brightness < threshold | Grayscale + CLAHE (`cv::createCLAHE`) |
+| Low-light (Jetson prod) | Brightness heuristic | GPIO IR floodlight ON + same CLAHE transform |
 
-The brightness threshold and IR sim parameters are matched to the training-time augmentation pipeline so inference and training see the same distribution.
+The brightness threshold and CLAHE parameters are matched to the training-time augmentation pipeline so inference and training see the same distribution.
+
+**Terminology note:** This is a brightness-triggered preprocessing transform applied to a single camera feed — not sensor fusion. Do not use the word "fusion" when describing this feature in documentation or presentations.
 
 ---
 
@@ -153,11 +168,11 @@ These are explicitly deferred. Do not add them to the inference service.
 
 ## 9. Phase Tracking
 
-| Phase | Description | Entry Criteria | Exit Criteria |
-|---|---|---|---|
-| 0 | Documentation | Project kick-off | README + DESIGN_REQUIREMENTS + ARCHITECTURE complete |
-| 1 | Data Collection | Phase 0 done | ≥ 200 labelled images (YOLO format), sample_video.mp4 in repo |
-| 2 | Training Pipeline | Phase 1 done | YOLOv8n trains to mAP50 ≥ 0.80; ONNX export passes validation |
-| 3 | Inference Service | Phase 2 done | C++ service processes video, fires debounce, /status + /photo respond |
-| 4 | Notification | Phase 3 done | Telegram alert delivered end-to-end from video input on laptop |
-| 5 | Hardware Deployment | Jetson in hand | ≥ 30 FPS via TensorRT; systemd survives reboot |
+| Phase | Description | Entry Criteria | Exit Criteria | Status |
+|---|---|---|---|---|
+| 0 | Documentation | Project kick-off | README + DESIGN_REQUIREMENTS + ARCHITECTURE complete | ✅ Done |
+| 1 | Data Collection | Phase 0 done | ≥ 200 labelled images (YOLO format), sample_video.mp4 in repo | 🔄 In Progress |
+| 2 | Training Pipeline | Phase 1 done | YOLOv8n trains to mAP50 ≥ 0.80; ONNX export passes validation | Planned |
+| 3 | Inference Service | Phase 2 done | C++ service processes video, fires debounce, /status + /photo respond | Planned |
+| 4 | Notification | Phase 3 done | Telegram alert delivered end-to-end from video input on laptop | Planned |
+| 5 | Hardware Deployment | Jetson in hand | ≥ 30 FPS via TensorRT; systemd survives reboot | Pending hardware |
