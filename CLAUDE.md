@@ -13,8 +13,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `scripts/organise_raw.py` — flat → `images/`+`labels/` by stem, idempotent.
 - `scripts/validate_labels.py` — YOLO label sanity checks, UTF-8 BOM tolerated.
 - `scripts/split_dataset.py` — seeded 70/15/15 split, writes `data/data.yaml`.
+- `scripts/_generate_synthetic.py` — synthetic image+label generator for pipeline dry-runs (no real data required).
 - `training/dataset.py` — `BowlDataset` (used in Phase 2).
 - `tests/` — 21 unit tests covering organise / validate / split / dataset.
+- **Pipeline dry-run validated end-to-end** with synthetic fixtures (organise → validate → split → `data.yaml`). Ready to receive real labelled images.
 
 **What's left for Phase 1b:** capture iPhone footage, label in Roboflow, unzip to `data/raw/labelled/`, run `make data`. Exit at ≥ 200 labelled images + `data/videos/sample_video.mp4` committed.
 
