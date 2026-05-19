@@ -20,6 +20,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **What's left for Phase 1b:** capture iPhone footage, label in Roboflow, unzip to `data/raw/labelled/`, run `make data`. Exit at ≥ 200 labelled images + `data/videos/sample_video.mp4` committed.
 
+**Phase 2 — in progress (started early, in parallel with 1b's data gathering):**
+- `training/augmentations.py` ✓ — low-light adaptive preprocessing (grayscale + CLAHE). Public API: `mean_brightness`, `low_light_transform`, `adaptive_low_light`, `LowLightAugmenter` (callable for `BowlDataset.transform`). Defaults (`BRIGHTNESS_THRESHOLD=50`, `CLAHE_CLIP_LIMIT=2.0`, `CLAHE_TILE_GRID=(8,8)`) MUST be mirrored by the C++ inference preprocessor in Phase 3 to keep train/inference distributions matched.
+- `tests/test_augmentations.py` ✓ — 11 unit tests covering shape/dtype preservation, grayscale-replication invariant, contrast-improvement on low-contrast input, threshold gating.
+- `training/train.py` ☐, `training/export.py` ☐ — pending. Will need `poetry install --with training` to be runnable (torch + ultralytics).
+
 Canonical specs (do not duplicate — link, then read):
 - `docs/DESIGN_REQUIREMENTS.md` — functional/non-functional requirements, Telegram setup, MVP scope.
 - `docs/ARCHITECTURE.md` — component contracts, data flow, swap plan.
