@@ -1,6 +1,6 @@
 # CatBowlWatch — Architecture
 
-> **Status:** Phase 1b in progress (awaiting real labelled images). Phase 2 scaffolds landed (`augmentations.py`, `train.py`, `export.py` with ONNX shape verification). Phase 3 toolchain scaffold validated on **macOS (Apple Silicon)** and WSL2 Ubuntu — OpenCV 4.13, spdlog 1.14.1, ONNX Runtime 1.20.1, GoogleTest 1.15.2 all linking and passing `ctest`. Real C++ components (Capture → Preprocessor → OnnxBackend → Postprocessor → BowlTracker → DebounceEngine → HttpServer) are being layered on.
+> **Status:** Phase 1b in progress (awaiting real labelled images). Phases 2 and 3 are complete. Phase 3 C++ service (Capture → Preprocessor → OnnxBackend → Postprocessor → BowlTracker → DebounceEngine → HttpServer + `service_main.cpp`) is fully implemented with 25 unit tests passing on **macOS Apple Silicon** and WSL2 Ubuntu (OpenCV 4.13, spdlog 1.14.1, ONNX Runtime 1.20.1). Service binary needs `MODEL_PATH` to run E2E (gated on Phase 1b + training). Phase 4 (TelegramNotifier + Docker demo) is next.
 > **Last updated:** 2026-05-19
 
 ---
@@ -224,14 +224,14 @@ The brightness threshold and low-light transform parameters are matched to the t
 | Directory | Component(s) |
 |---|---|
 | `training/` | dataset.py ✓, augmentations.py ✓ (low-light), train.py ✓, export.py ✓ |
-| `inference/` | ✓ CMakeLists.txt (FetchContent spdlog/cpp-httplib/gtest, OpenCV, ONNX Runtime via `ONNXRUNTIME_ROOT`), smoke binary, gtest harness; ☐ Capture, Preprocessor, OnnxBackend, TrtBackend, Postprocessor, BowlTracker, DebounceEngine, HTTP server |
-| `notification/` | ☐ Telegram notifier |
+| `inference/` | ✓ CMakeLists.txt, catbowlwatch_lib (Capture, Preprocessor, OnnxBackend, Postprocessor, BowlTracker, DebounceEngine, HttpServer), service_main.cpp, smoke binary; 25 unit tests; ☐ TrtBackend (Phase 5, WITH_TENSORRT=ON) |
+| `notification/` | ☐ TelegramNotifier — Phase 4 (libcurl POST /sendPhoto, 3× retry, dedicated thread) |
 | `deployment/` | ☐ GStreamer config, systemd unit, GPIO IR trigger, deploy.sh |
 | `demo/` | .env.example ✓; docker-compose.yml ☐ |
 | `models/` | ⏳ .pt, .onnx, .engine (gitignored) |
 | `scripts/` | collect_data.py ✓, organise_raw.py ✓, validate_labels.py ✓, split_dataset.py ✓, _generate_synthetic.py ✓ (dev aid), setup_wsl_dev.sh ✓, setup_macos_dev.sh ✓; Phase 5: build.sh ☐, export_trt.sh ☐ |
 | `docker/` | ☐ Dockerfile.training, Dockerfile.demo |
-| `tests/` | ✓ organise / validate / split / BowlDataset / augmentations / train / export; ☐ Phase 2 ONNX/TRT parity (needs a real `.onnx`), Phase 3 debounce unit tests |
+| `tests/` | ✓ Python: organise / validate / split / BowlDataset / augmentations / train / export (41 tests); ✓ C++: Preprocessor / Postprocessor / BowlTracker / DebounceEngine + Smoke (25 tests); ☐ ONNX/TRT parity (needs real `.onnx`) |
 | `docs/` | DESIGN_REQUIREMENTS.md ✓, ARCHITECTURE.md ✓ |
 
 ---

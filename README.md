@@ -6,7 +6,7 @@ Two cat food bowls. One camera. Fully automatic detection, no manual ROI. When e
 
 Built as a portfolio piece demonstrating end-to-end ML-to-C++ edge deployment: data collection, training, ONNX inference, debounce logic, real-time notification, and hardware deployment on Jetson Nano — all from scratch.
 
-> **Status (2026-05-19):** Phases 1a, 2, and the Phase 3 toolchain scaffold are done. Phase 1b (iPhone footage + Roboflow labelling → ≥ 200 images) is the active data-collection work. Phase 3 real C++ components are being implemented — the toolchain has been validated on **macOS Apple Silicon** and WSL2 Ubuntu (OpenCV 4.13 + spdlog 1.14.1 + ONNX Runtime 1.20.1, `ctest` passing).
+> **Status (2026-05-19):** Phases 1a, 2, and 3 are complete. Phase 1b (iPhone footage + Roboflow labelling → ≥ 200 images) is the active data-collection work. The full C++17 inference service (Capture → Preprocessor → OnnxBackend → Postprocessor → BowlTracker → DebounceEngine → HttpServer) is implemented and **25 C++ unit tests pass** on macOS Apple Silicon and WSL2 Ubuntu. The service binary is ready; it needs `MODEL_PATH` pointing to a trained `.onnx` (gated on Phase 1b).
 
 ---
 
@@ -89,17 +89,29 @@ catbowlwatch/
 │   ├── augmentations.py ✓  # low-light adaptive preprocessing (CLAHE, matches C++ Preprocessor)
 │   ├── train.py ✓          # Ultralytics YOLOv8n training entry; copies best.pt → models/
 │   └── export.py ✓         # .pt → ONNX opset 17 with shape verification [1,6,8400]
-├── inference/              ⏳ Phase 3 — C++17 ONNX/TensorRT service (scaffold ✓, components in progress)
-│   ├── CMakeLists.txt ✓    # FetchContent spdlog/cpp-httplib/gtest; OpenCV + ONNX Runtime
-│   ├── src/main.cpp ✓      # smoke binary (toolchain validator — will become real entrypoint)
-│   └── tests/test_smoke.cpp ✓  # GoogleTest Smoke.ToolchainOk
+├── inference/              ✓ Phase 3 — C++17 ONNX/TensorRT service (complete)
+│   ├── CMakeLists.txt ✓        # FetchContent spdlog/cpp-httplib/gtest; OpenCV + ONNX Runtime
+│   ├── src/
+│   │   ├── types.hpp ✓         # Detection, BowlState, AlertEvent
+│   │   ├── config.hpp ✓        # Config::from_env() — all thresholds env-driven
+│   │   ├── capture ✓           # cv::VideoCapture; loops video files
+│   │   ├── preprocessor ✓      # brightness check → CLAHE; mirrors augmentations.py
+│   │   ├── inference_backend ✓ # abstract interface + factory (onnx | tensorrt)
+│   │   ├── onnx_backend ✓      # ONNX Runtime session [1,3,640,640]→[1,6,8400]
+│   │   ├── postprocessor ✓     # transpose, conf filter, IoU NMS
+│   │   ├── bowl_tracker ✓      # x-coord identity, registration warm-up, hold frames
+│   │   ├── debounce_engine ✓   # 60s/300s per-bowl timers, injectable clock
+│   │   ├── http_server ✓       # GET /status (JSON) + GET /photo (JPEG), mutex-safe
+│   │   ├── service_main.cpp ✓  # real service entry point (needs MODEL_PATH)
+│   │   └── main.cpp ✓          # toolchain smoke binary (CI validator)
+│   └── tests/ ✓                # 25 GoogleTest cases (Preprocessor/Postprocessor/BowlTracker/DebounceEngine)
 ├── notification/           ☐ Phase 4 — Telegram notifier
 ├── deployment/             ☐ Phase 5 — GStreamer config, systemd, GPIO
 ├── demo/
 │   └── .env.example ✓      # Telegram + inference env vars
 ├── docker/                 ☐ Phase 4 — training + demo Dockerfiles
 ├── models/                 ⏳ .pt/.onnx/.engine artifacts (gitignored)
-├── tests/ ✓                # 21 unit tests; Phase 2 parity tests planned
+├── tests/ ✓                # 41 Python unit tests (Phase 1+2); 25 C++ unit tests (Phase 3)
 ├── docs/
 │   ├── DESIGN_REQUIREMENTS.md ✓
 │   └── ARCHITECTURE.md ✓
@@ -119,8 +131,8 @@ catbowlwatch/
 | 1a | Phase 1 plumbing (scripts, Makefile, Poetry env, tests) | Laptop | ✓ Done |
 | 1b | Phase 1 data capture & labelling (≥ 200 images + sample video) | Laptop | **In Progress** |
 | 2 | Training Pipeline (`augmentations.py`, `train.py`, `export.py`) | Laptop / Colab | ✓ Done (gated on 1b data for E2E run) |
-| 3 | Inference Service (C++17, ONNX) — toolchain scaffold | Laptop (macOS + WSL2) | ✓ Scaffold done — components in progress |
-| 4 | Notification & Demo (Docker) | Laptop | Planned |
+| 3 | Inference Service (C++17, ONNX) — full pipeline + 25 unit tests | Laptop (macOS + WSL2) | ✓ Done (needs trained model to run E2E) |
+| 4 | Notification (TelegramNotifier + libcurl) & Demo (Docker) | Laptop | **Next** |
 | 5 | Hardware Deployment & TensorRT Swap | Jetson Nano | Pending hardware |
 
 Phase boundaries and exit criteria: [docs/DESIGN_REQUIREMENTS.md §9](docs/DESIGN_REQUIREMENTS.md).
@@ -146,13 +158,13 @@ Override the split ratios or seed: `make split SPLIT_RATIOS="0.8 0.1 0.1" SEED=7
 
 **Phase 1b (now):** capture iPhone footage of the actual bowl setup → label in Roboflow → unzip into `data/raw/labelled/` → `make data`. Target ≥ 200 labelled images across both bowl states, varied lighting, with cat present/absent. Pick the best 20–30 s clip with an empty bowl from frame 1 and commit it to `data/videos/sample_video.mp4`. See the [iPhone labelling workflow notes](docs/DESIGN_REQUIREMENTS.md) and [labelling rules for two bowls](CLAUDE.md#dataset-pipeline-phase-1).
 
-**Phase 3 (now — C++ inference service components):** Capture → Preprocessor → OnnxBackend → Postprocessor → BowlTracker → DebounceEngine → HttpServer. All contracts are defined in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The toolchain (OpenCV 4.13, ONNX Runtime 1.20.1, spdlog 1.14.1, GoogleTest) is validated on macOS Apple Silicon and WSL2 Ubuntu.
+**Phase 4 (next):** `TelegramNotifier` (libcurl `POST /sendPhoto`, 3× retry, dedicated thread) + Docker demo (`docker/demo.yml` looping `sample_video.mp4` with `DEBOUNCE_SECONDS=8`). Gated on Phase 1b for a real E2E demo run, but the notifier code can be written now.
 
-**Phase 2 E2E run (after Phase 1b exits):**
+**Phase 1b + 2 E2E run (parallel track):**
 
-- `poetry install --with training` to bring in `torch`, `torchvision`, `ultralytics`
-- `make train` then `make export-onnx` — produces `models/catbowlwatch.onnx`; target `mAP50 ≥ 0.80`
-- Phase 3 OnnxBackend picks up the model via `MODEL_PATH` env var
+- Record iPhone footage → label in Roboflow (≥ 200 images) → `make data`
+- `poetry install --with training` → `make train` → `make export-onnx` → `models/catbowlwatch.onnx`
+- Then run the Phase 3 service: `MODEL_PATH=models/catbowlwatch.onnx VIDEO_SOURCE=data/videos/sample_video.mp4 ./inference/build/src/catbowlwatch`
 
 ---
 

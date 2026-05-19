@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-**Phase 1 — Data Collection. Plumbing done (1a); data capture & labelling in progress (1b).** Phases 1–5 are planned sequentially: do not implement features from a later phase when working in an earlier one. Phase boundaries are defined in `docs/DESIGN_REQUIREMENTS.md §9`.
+**Phases 1a, 2, and 3 are done. Phase 1b (data capture & labelling) is in progress.** Phases 1–5 are planned sequentially: do not implement features from a later phase when working in an earlier one. Phase boundaries are defined in `docs/DESIGN_REQUIREMENTS.md §9`.
 
 **What exists today (Phase 1a — done):**
 - Poetry env: `pyproject.toml` (base: `opencv-python`, `numpy`, `pytest`; optional `training` group: `torch`, `torchvision`, `ultralytics`).
@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **What's left for Phase 1b:** capture iPhone footage, label in Roboflow, unzip to `data/raw/labelled/`, run `make data`. Exit at ≥ 200 labelled images + `data/videos/sample_video.mp4` committed.
 
-**Phase 2 — in progress (started early, in parallel with 1b's data gathering):**
+**Phase 2 — done (scaffold complete; E2E training run gated on Phase 1b data):**
 - `training/augmentations.py` ✓ — low-light adaptive preprocessing (grayscale + CLAHE). Public API: `mean_brightness`, `low_light_transform`, `adaptive_low_light`, `LowLightAugmenter` (callable for `BowlDataset.transform`). Defaults (`BRIGHTNESS_THRESHOLD=50`, `CLAHE_CLIP_LIMIT=2.0`, `CLAHE_TILE_GRID=(8,8)`) MUST be mirrored by the C++ inference preprocessor in Phase 3 to keep train/inference distributions matched.
 - `training/train.py` ✓ — Ultralytics `YOLO.train` wrapper. CLI args via `parse_args`/`TrainConfig` dataclass. Copies `best.pt` to `models/catbowlwatch.pt` after training. `make train`. Lazy `ultralytics` import — module is importable without the training group installed.
 - `training/export.py` ✓ — `.pt` → ONNX opset 17 with **shape verification** against the `EXPECTED_OUTPUT_SHAPE = (1, 6, 8400)` contract from ARCHITECTURE.md §4.3. Fails loudly if the C++ postprocessor would receive an unexpected layout. `make export-onnx`. Lazy `ultralytics` + `onnxruntime` imports.
@@ -30,7 +30,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Phase 2 runnable end-to-end** requires `poetry install --with training` AND a populated `data/data.yaml` (so ultimately still gated on Phase 1b's ≥ 200 labelled images).
 
-**Phase 3 — toolchain scaffold (started early in WSL2 Ubuntu):**
+**Phase 3 — done (toolchain + all real C++ components implemented, 25 tests passing):**
 - `scripts/setup_wsl_dev.sh` ✓ — apt-installs build-essential / cmake / pkg-config / libopencv-dev / libcurl4-openssl-dev; downloads ONNX Runtime C++ 1.20.1 release tarball to `$HOME/onnxruntime-linux-x64-<ver>/`. TensorRT intentionally not installed (laptop default is `WITH_TENSORRT=OFF`).
 - `scripts/setup_macos_dev.sh` ✓ — `brew install cmake opencv`; downloads ONNX Runtime C++ 1.20.1 arm64 (or x86_64) to `$HOME/onnxruntime-osx-<arch>-<ver>/`. Mirrors the WSL script for macOS.
 - `inference/CMakeLists.txt` ✓ — top-level CMake. `WITH_TENSORRT=OFF` default; `find_package(OpenCV REQUIRED)`; ONNX Runtime imported via `ONNXRUNTIME_ROOT` env or `-D` arg; spdlog (v1.14.1), cpp-httplib (v0.18.1), GoogleTest (v1.15.2) vendored via FetchContent.
@@ -89,25 +89,33 @@ poetry install --with training  # adds torch, torchvision, ultralytics
 cp demo/.env.example .env   # fill in TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
 docker compose -f docker/demo.yml up
 
-# C++ inference service — laptop (ONNX)  [planned]
-mkdir -p inference/build && cd inference/build
-cmake -DWITH_TENSORRT=OFF ..
-make -j$(nproc)
+# Phase 2 — train + export (requires Phase 1b data + poetry install --with training)
+make train                  # YOLOv8n training; copies best.pt → models/catbowlwatch.pt
+make export-onnx            # .pt → models/catbowlwatch.onnx (opset 17, shape verified)
 
-# C++ inference service — Jetson (TensorRT)  [planned]
-cmake -DWITH_TENSORRT=ON ..
-make -j$(nproc)
+# Phase 3 — C++ inference service (macOS)
+export ONNXRUNTIME_ROOT=~/onnxruntime-osx-arm64-1.20.1
+cmake -B inference/build -DCMAKE_BUILD_TYPE=Release -DWITH_TENSORRT=OFF
+cmake --build inference/build -j$(sysctl -n hw.logicalcpu)
+ctest --test-dir inference/build --output-on-failure   # 25 tests
 
-# Python training pipeline  [planned]
-cd training
-python train.py          # trains YOLOv8n, saves .pt to models/
-python export.py         # exports .pt → ONNX opset 17
+# Run the real service (requires a trained model)
+MODEL_PATH=models/catbowlwatch.onnx VIDEO_SOURCE=data/videos/sample_video.mp4 \
+  DYLD_LIBRARY_PATH=$ONNXRUNTIME_ROOT/lib \
+  ./inference/build/src/catbowlwatch
 
-# Verify ONNX output shape (run before writing C++ postprocessor)
+# Phase 3 — C++ inference service (WSL2 Ubuntu)
+export ONNXRUNTIME_ROOT=~/onnxruntime-linux-x64-1.20.1
+cmake -B inference/build -DCMAKE_BUILD_TYPE=Release -DWITH_TENSORRT=OFF
+cmake --build inference/build -j$(nproc)
+ctest --test-dir inference/build --output-on-failure
+
+# Phase 4 — demo (Docker — not yet runnable)
+cp demo/.env.example .env   # fill in TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+docker compose -f docker/demo.yml up
+
+# Verify ONNX output shape after training
 python -c "import onnxruntime as ort, numpy as np; s=ort.InferenceSession('models/catbowlwatch.onnx'); print(s.run(None,{s.get_inputs()[0].name:np.zeros((1,3,640,640),dtype='f4')})[0].shape)"
-
-# Tests  [planned]
-cd tests && python -m pytest           # ONNX/TRT parity + debounce unit tests
 ```
 
 ## Architecture
