@@ -9,6 +9,9 @@ __pycache__/
 .venv/
 *.egg-info/
 
+# Ultralytics training run artifacts
+runs/
+
 # C++ build
 build/
 *.o

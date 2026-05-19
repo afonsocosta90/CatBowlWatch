@@ -22,8 +22,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Phase 2 — in progress (started early, in parallel with 1b's data gathering):**
 - `training/augmentations.py` ✓ — low-light adaptive preprocessing (grayscale + CLAHE). Public API: `mean_brightness`, `low_light_transform`, `adaptive_low_light`, `LowLightAugmenter` (callable for `BowlDataset.transform`). Defaults (`BRIGHTNESS_THRESHOLD=50`, `CLAHE_CLIP_LIMIT=2.0`, `CLAHE_TILE_GRID=(8,8)`) MUST be mirrored by the C++ inference preprocessor in Phase 3 to keep train/inference distributions matched.
-- `tests/test_augmentations.py` ✓ — 11 unit tests covering shape/dtype preservation, grayscale-replication invariant, contrast-improvement on low-contrast input, threshold gating.
-- `training/train.py` ☐, `training/export.py` ☐ — pending. Will need `poetry install --with training` to be runnable (torch + ultralytics).
+- `training/train.py` ✓ — Ultralytics `YOLO.train` wrapper. CLI args via `parse_args`/`TrainConfig` dataclass. Copies `best.pt` to `models/catbowlwatch.pt` after training. `make train`. Lazy `ultralytics` import — module is importable without the training group installed.
+- `training/export.py` ✓ — `.pt` → ONNX opset 17 with **shape verification** against the `EXPECTED_OUTPUT_SHAPE = (1, 6, 8400)` contract from ARCHITECTURE.md §4.3. Fails loudly if the C++ postprocessor would receive an unexpected layout. `make export-onnx`. Lazy `ultralytics` + `onnxruntime` imports.
+- `tests/test_augmentations.py` ✓ (11), `tests/test_train.py` ✓ (5), `tests/test_export.py` ✓ (4) — 20 new tests. Full suite: 41 passed, 1 skipped (torch dep).
+- `onnxruntime` added to the `training` Poetry group for export-time shape verification.
+- ☐ ONNX/TRT parity tests — deferred until a real `.onnx` exists (needs Phase 1b data + a training run).
+
+**Phase 2 runnable end-to-end** requires `poetry install --with training` AND a populated `data/data.yaml` (so ultimately still gated on Phase 1b's ≥ 200 labelled images).
 
 Canonical specs (do not duplicate — link, then read):
 - `docs/DESIGN_REQUIREMENTS.md` — functional/non-functional requirements, Telegram setup, MVP scope.

@@ -1,6 +1,6 @@
 # CatBowlWatch — Architecture
 
-> **Status:** Phase 1b in progress (pipeline dry-run validated, awaiting real labelled images). Phase 2 started early in parallel: `training/augmentations.py` landed.
+> **Status:** Phase 1b in progress (pipeline dry-run validated, awaiting real labelled images). Phase 2 scaffolds landed early in parallel: `training/augmentations.py`, `training/train.py`, `training/export.py` (with ONNX shape verification against the `[1, 6, 8400]` contract). End-to-end Phase 2 still gated on real data + `poetry install --with training`.
 > **Last updated:** 2026-05-19
 
 ---
@@ -223,7 +223,7 @@ The brightness threshold and low-light transform parameters are matched to the t
 
 | Directory | Component(s) |
 |---|---|
-| `training/` | dataset.py ✓, augmentations.py ✓ (low-light), train.py ☐, export.py ☐ |
+| `training/` | dataset.py ✓, augmentations.py ✓ (low-light), train.py ✓, export.py ✓ |
 | `inference/` | ☐ Capture, Preprocessor, OnnxBackend, TrtBackend, Postprocessor, BowlTracker, DebounceEngine, HTTP server |
 | `notification/` | ☐ Telegram notifier |
 | `deployment/` | ☐ GStreamer config, systemd unit, GPIO IR trigger, deploy.sh |
@@ -231,7 +231,7 @@ The brightness threshold and low-light transform parameters are matched to the t
 | `models/` | ⏳ .pt, .onnx, .engine (gitignored) |
 | `scripts/` | collect_data.py ✓, organise_raw.py ✓, validate_labels.py ✓, split_dataset.py ✓, _generate_synthetic.py ✓ (dev aid); Phase 5: build.sh ☐, export_trt.sh ☐ |
 | `docker/` | ☐ Dockerfile.training, Dockerfile.demo |
-| `tests/` | ✓ organise / validate / split / BowlDataset / augmentations; ☐ Phase 2 ONNX parity, Phase 3 debounce unit tests |
+| `tests/` | ✓ organise / validate / split / BowlDataset / augmentations / train / export; ☐ Phase 2 ONNX/TRT parity (needs a real `.onnx`), Phase 3 debounce unit tests |
 | `docs/` | DESIGN_REQUIREMENTS.md ✓, ARCHITECTURE.md ✓ |
 
 ---

@@ -23,7 +23,7 @@ INTERVAL     ?= 1.0
 
 VIDEO_EXTS := mp4 mov m4v MP4 MOV M4V
 
-.PHONY: help collect organise validate split data clean-data test
+.PHONY: help collect organise validate split data clean-data train export-onnx test
 
 help:  ## Show available targets.
 	@awk -F':.*?## ' '/^[a-zA-Z_-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -56,6 +56,12 @@ clean-data:  ## Remove split outputs and data.yaml. Raw data is untouched.
 	rm -rf $(DATA_ROOT)/images/train $(DATA_ROOT)/images/val $(DATA_ROOT)/images/test
 	rm -rf $(DATA_ROOT)/labels/train $(DATA_ROOT)/labels/val $(DATA_ROOT)/labels/test
 	rm -f  $(DATA_ROOT)/data.yaml
+
+train:  ## Train YOLOv8n on the dataset. Requires `poetry install --with training`.
+	$(PYTHON) training/train.py
+
+export-onnx:  ## Export trained .pt → ONNX opset 17 (verifies shape). Requires `poetry install --with training`.
+	$(PYTHON) training/export.py
 
 test:  ## Run unit tests.
 	$(PYTHON) -m pytest tests/ -v
