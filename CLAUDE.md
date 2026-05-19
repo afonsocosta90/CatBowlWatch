@@ -4,7 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-**Phase 1 — Data Collection (in progress).** Phases 1–5 are planned sequentially: do not implement features from a later phase when working in an earlier one. Phase boundaries are defined in `docs/DESIGN_REQUIREMENTS.md §9`. Only `scripts/collect_data.py` and `training/dataset.py` exist so far; most directories are placeholders (`.gitkeep`).
+**Phase 1 — Data Collection. Plumbing done (1a); data capture & labelling in progress (1b).** Phases 1–5 are planned sequentially: do not implement features from a later phase when working in an earlier one. Phase boundaries are defined in `docs/DESIGN_REQUIREMENTS.md §9`.
+
+**What exists today (Phase 1a — done):**
+- Poetry env: `pyproject.toml` (base: `opencv-python`, `numpy`, `pytest`; optional `training` group: `torch`, `torchvision`, `ultralytics`).
+- `Makefile` — `make data` (organise → validate → split), plus `collect` / `validate` / `split` / `clean-data` / `test`. `PYTHON ?= poetry run python`.
+- `scripts/collect_data.py` — frame sampler.
+- `scripts/organise_raw.py` — flat → `images/`+`labels/` by stem, idempotent.
+- `scripts/validate_labels.py` — YOLO label sanity checks, UTF-8 BOM tolerated.
+- `scripts/split_dataset.py` — seeded 70/15/15 split, writes `data/data.yaml`.
+- `training/dataset.py` — `BowlDataset` (used in Phase 2).
+- `tests/` — 21 unit tests covering organise / validate / split / dataset.
+
+**What's left for Phase 1b:** capture iPhone footage, label in Roboflow, unzip to `data/raw/labelled/`, run `make data`. Exit at ≥ 200 labelled images + `data/videos/sample_video.mp4` committed.
 
 Canonical specs (do not duplicate — link, then read):
 - `docs/DESIGN_REQUIREMENTS.md` — functional/non-functional requirements, Telegram setup, MVP scope.
@@ -16,13 +28,17 @@ Most commands below describe planned scripts and Docker setup that don't exist y
 
 ```bash
 # Phase 1 — dataset pipeline (works today)
-make data              # organise → validate → split (70/15/15, seed 42)
-make collect           # sample frames from videos in data/raw/incoming/
-make test              # run pytest
+poetry install                  # one-time; adds opencv-python, numpy, pytest
+make data                       # organise → validate → split (70/15/15, seed 42)
+make collect                    # sample frames from videos in data/raw/incoming/
+make test                       # run pytest
 
 # Sample frames directly (also runs as `make collect`)
-python scripts/collect_data.py --source data/videos/sample_video.mp4 --interval 1.0
-python scripts/collect_data.py --source 0 --interval 0.5  # webcam
+poetry run python scripts/collect_data.py --source data/videos/sample_video.mp4 --interval 1.0
+poetry run python scripts/collect_data.py --source 0 --interval 0.5  # webcam
+
+# Phase 2 deps (when starting training work)
+poetry install --with training  # adds torch, torchvision, ultralytics
 
 # Demo (Docker — no Jetson needed)  [planned]
 cp demo/.env.example .env   # fill in TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID

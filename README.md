@@ -6,9 +6,11 @@ Two cat food bowls. One camera. Fully automatic detection, no manual ROI. When e
 
 Built as a portfolio piece demonstrating end-to-end ML-to-C++ edge deployment: data collection, training, ONNX inference, debounce logic, real-time notification, and hardware deployment on Jetson Nano — all from scratch.
 
+> **Status (2026-05-19):** Phase 1 (Data Collection) is **partly done**. Dataset pipeline (`scripts/organise_raw.py`, `validate_labels.py`, `split_dataset.py`), Poetry env, Makefile, and a 21-test suite are in place. iPhone capture → Roboflow labelling → `make data` is the active work to reach the Phase 1 exit bar (≥ 200 labelled images + `sample_video.mp4`). The demo and inference service land in Phases 3–4 and are not yet runnable.
+
 ---
 
-## Demo (~20-second quick-start)
+## Demo (Phase 4 preview — not yet runnable)
 
 ```bash
 # Requires Docker and a valid .env with TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
@@ -55,29 +57,50 @@ flowchart TD
 | Notification | Telegram Bot API | Same |
 | Low-light | Brightness sim (software) | IR floodlight + GPIO trigger |
 | OS | macOS / Ubuntu 22.04 | JetPack TBD (B01 → 4.6.4; Orin Nano → 6.x) |
+| Python deps | Poetry (`pyproject.toml`); base + optional `training` group | Same |
+| Build | `make` (Phase 1 dataset pipeline) | + CMake for C++ service |
 
 ---
 
 ## Project Structure
 
+Legend: ✓ = in repo today, ⏳ = scaffolded (empty), ☐ = planned, not yet created.
+
 ```
 catbowlwatch/
-├── data/                  # Images, YOLO labels, sample_video.mp4
-│   ├── images/
-│   ├── labels/
-│   └── videos/
-├── training/              # dataset.py, train.py, augmentations, export.py
-├── inference/             # C++17 ONNX/TensorRT inference service
-├── notification/          # Telegram notifier module
-├── deployment/            # GStreamer pipeline, systemd, GPIO, deploy.sh
-├── demo/                  # docker-compose demo, quick-start assets
-├── models/                # .pt  .onnx  .engine artifacts
-├── scripts/               # collect_data.py, train.sh, build.sh
-├── docker/                # Training + demo Dockerfiles
-├── tests/                 # Parity + unit tests
-├── docs/                  # All design and architecture documentation
-├── .github/workflows/     # CI (lint, test, ONNX export validation)
-├── README.md
+├── pyproject.toml ✓        # Poetry env: base deps + optional `training` group
+├── poetry.lock ✓
+├── Makefile ✓              # make data | collect | validate | split | test | clean-data
+├── data/
+│   ├── raw/                ⏳ gitignored — iPhone drops + Roboflow exports
+│   ├── images/{train,val,test}/  ⏳ gitignored — produced by `make split`
+│   ├── labels/{train,val,test}/  ⏳ gitignored — produced by `make split`
+│   ├── videos/             ⏳ sample_video.mp4 to be committed
+│   └── data.yaml           ⏳ produced by `make split`
+├── scripts/
+│   ├── collect_data.py ✓   # frame sampler (video or webcam)
+│   ├── organise_raw.py ✓   # separate flat image/label exports by stem
+│   ├── validate_labels.py ✓# YOLO label sanity check
+│   └── split_dataset.py ✓  # seeded 70/15/15 split + data.yaml writer
+├── training/
+│   ├── dataset.py ✓        # PyTorch BowlDataset (used in Phase 2)
+│   ├── train.py ☐          # Phase 2 — Ultralytics training entry
+│   ├── augmentations.py ☐  # Phase 2 — low-light transforms (match inference)
+│   └── export.py ☐         # Phase 2 — .pt → ONNX opset 17
+├── inference/              ☐ Phase 3 — C++17 ONNX/TensorRT service
+├── notification/           ☐ Phase 4 — Telegram notifier
+├── deployment/             ☐ Phase 5 — GStreamer config, systemd, GPIO
+├── demo/
+│   └── .env.example ✓      # Telegram + inference env vars
+├── docker/                 ☐ Phase 4 — training + demo Dockerfiles
+├── models/                 ⏳ .pt/.onnx/.engine artifacts (gitignored)
+├── tests/ ✓                # 21 unit tests; Phase 2 parity tests planned
+├── docs/
+│   ├── DESIGN_REQUIREMENTS.md ✓
+│   └── ARCHITECTURE.md ✓
+├── .github/workflows/      ☐ Phase 2+ — CI (lint, tests, ONNX validation)
+├── README.md ✓
+├── CLAUDE.md ✓             # dev context (architecture, commands, constraints)
 └── LICENSE
 ```
 
@@ -87,11 +110,15 @@ catbowlwatch/
 
 | # | Phase | Runs on | Status |
 |---|---|---|---|
-| 1 | Data Collection | Laptop | **In Progress** |
+| 0 | Documentation | — | ✓ Done |
+| 1a | Phase 1 plumbing (scripts, Makefile, Poetry env, tests) | Laptop | ✓ Done |
+| 1b | Phase 1 data capture & labelling (≥ 200 images + sample video) | Laptop | **In Progress** |
 | 2 | Training Pipeline | Laptop / Colab | Planned |
 | 3 | Inference Service (ONNX) | Laptop | Planned |
-| 4 | Notification | Laptop | Planned |
+| 4 | Notification & Demo (Docker) | Laptop | Planned |
 | 5 | Hardware Deployment & TensorRT Swap | Jetson Nano | Pending hardware |
+
+Phase boundaries and exit criteria: [docs/DESIGN_REQUIREMENTS.md §9](docs/DESIGN_REQUIREMENTS.md).
 
 ---
 
@@ -106,17 +133,32 @@ make data              # organise → validate → split 70/15/15 + write data/d
 make test              # pytest
 ```
 
-Override the split ratios or seed: `make split SPLIT_RATIOS="0.8 0.1 0.1" SEED=7`. Raw drops and split outputs are gitignored; `data/data.yaml` and `data/videos/sample_video.mp4` are committed.
+Override the split ratios or seed: `make split SPLIT_RATIOS="0.8 0.1 0.1" SEED=7`. Raw drops and split outputs are gitignored; `data/data.yaml` and `data/videos/sample_video.mp4` are committed once they exist.
+
+---
+
+## What's Next
+
+**Phase 1b (now):** capture iPhone footage of the actual bowl setup → label in Roboflow → unzip into `data/raw/labelled/` → `make data`. Target ≥ 200 labelled images across both bowl states, varied lighting, with cat present/absent. Pick the best 20–30 s clip with an empty bowl from frame 1 and commit it to `data/videos/sample_video.mp4`. See the [iPhone labelling workflow notes](docs/DESIGN_REQUIREMENTS.md) and [labelling rules for two bowls](CLAUDE.md#dataset-pipeline-phase-1).
+
+**Phase 2 (after Phase 1b exits):**
+
+- `poetry install --with training` to bring in `torch`, `torchvision`, `ultralytics`
+- `training/train.py` — Ultralytics YOLOv8n training entry; target `mAP50 ≥ 0.80`
+- `training/augmentations.py` — low-light / CLAHE transforms (must match inference-time preprocessing — see [docs/ARCHITECTURE.md §6](docs/ARCHITECTURE.md))
+- `training/export.py` — `.pt → catbowlwatch.onnx` (opset 17); verify output shape `[1, 6, 8400]`
+- Add `tests/test_onnx_export.py` — shape + sanity checks on the exported ONNX
 
 ---
 
 ## Prerequisites
 
-- Python ≥ 3.10, PyTorch ≥ 2.1, Ultralytics ≥ 8.1
-- CMake ≥ 3.22, GCC ≥ 11 (C++17)
-- ONNX Runtime ≥ 1.17 (CPU build for laptop)
-- Docker ≥ 24 (for demo and training containers)
-- A Telegram bot token — see [docs/DESIGN_REQUIREMENTS.md](docs/DESIGN_REQUIREMENTS.md)
+- **Python ≥ 3.10** + **[Poetry](https://python-poetry.org/) ≥ 1.8** — everything Python runs inside the Poetry env (`poetry install` for Phase 1; `poetry install --with training` adds PyTorch + Ultralytics for Phase 2)
+- **GNU make** — for the `make data` pipeline (on Windows use WSL, Git Bash with make, or `winget install GnuWin32.Make`; or invoke the scripts directly via `poetry run python scripts/<…>.py`)
+- **CMake ≥ 3.22, GCC ≥ 11 (C++17)** — Phase 3 onward
+- **ONNX Runtime ≥ 1.17** (CPU build for laptop) — Phase 3 onward
+- **Docker ≥ 24** — Phase 4 demo and training containers
+- A Telegram bot token — see [docs/DESIGN_REQUIREMENTS.md §6](docs/DESIGN_REQUIREMENTS.md)
 
 ---
 

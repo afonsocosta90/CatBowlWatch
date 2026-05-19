@@ -1,7 +1,7 @@
 # CatBowlWatch — Design Requirements
 
-> **Status:** Phase 1 — Data Collection (in progress).
-> **Last updated:** 2026-05-18
+> **Status:** Phase 1 — Data Collection. Phase 1a (plumbing) done; Phase 1b (data capture & labelling) in progress.
+> **Last updated:** 2026-05-19
 
 ---
 
@@ -171,8 +171,9 @@ These are explicitly deferred. Do not add them to the inference service.
 | Phase | Description | Entry Criteria | Exit Criteria | Status |
 |---|---|---|---|---|
 | 0 | Documentation | Project kick-off | README + DESIGN_REQUIREMENTS + ARCHITECTURE complete | ✅ Done |
-| 1 | Data Collection | Phase 0 done | ≥ 200 labelled images (YOLO format), sample_video.mp4 in repo | 🔄 In Progress |
-| 2 | Training Pipeline | Phase 1 done | YOLOv8n trains to mAP50 ≥ 0.80; ONNX export passes validation | Planned |
-| 3 | Inference Service | Phase 2 done | C++ service processes video, fires debounce, /status + /photo respond | Planned |
-| 4 | Notification | Phase 3 done | Telegram alert delivered end-to-end from video input on laptop | Planned |
-| 5 | Hardware Deployment | Jetson in hand | ≥ 30 FPS via TensorRT; systemd survives reboot | Pending hardware |
+| 1a | Phase 1 plumbing | Phase 0 done | Poetry env (`pyproject.toml`); Makefile; `organise_raw.py` + `validate_labels.py` + `split_dataset.py`; ≥ 20 unit tests green | ✅ Done (2026-05-19) |
+| 1b | Phase 1 data capture & labelling | Phase 1a done | ≥ 200 labelled images (YOLO format) in `data/{images,labels}/{train,val,test}/`; `data/data.yaml` committed; `data/videos/sample_video.mp4` committed | 🔄 In Progress |
+| 2 | Training Pipeline | Phase 1b done | `training/train.py` trains YOLOv8n to `mAP50 ≥ 0.80`; `training/export.py` produces `catbowlwatch.onnx` (opset 17) with shape `[1, 6, 8400]`; ONNX-vs-runtime parity tests pass | Planned |
+| 3 | Inference Service | Phase 2 done | C++17 service processes video, fires debounce, `/status` + `/photo` respond; ONNX backend on laptop | Planned |
+| 4 | Notification & Demo | Phase 3 done | Telegram alert delivered end-to-end from video input on laptop; `docker compose -f docker/demo.yml up` runs the demo | Planned |
+| 5 | Hardware Deployment | Jetson in hand | ≥ 30 FPS via TensorRT; systemd survives reboot; GPIO IR floodlight wired | Pending hardware |

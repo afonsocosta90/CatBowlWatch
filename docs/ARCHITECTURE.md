@@ -1,7 +1,7 @@
 # CatBowlWatch — Architecture
 
-> **Status:** Phase 1 — Data Collection (in progress).
-> **Last updated:** 2026-05-18
+> **Status:** Phase 1 — Data Collection. Phase 1a (plumbing) done; Phase 1b (data capture & labelling) in progress.
+> **Last updated:** 2026-05-19
 
 ---
 
@@ -223,16 +223,16 @@ The brightness threshold and low-light transform parameters are matched to the t
 
 | Directory | Component(s) |
 |---|---|
-| `training/` | dataset.py, train.py, augmentations.py (IR sim), export.py |
-| `inference/` | Capture, Preprocessor, OnnxBackend, TrtBackend, Postprocessor, BowlTracker, DebounceEngine, HTTP server |
-| `notification/` | Telegram notifier |
-| `deployment/` | GStreamer config, systemd unit, GPIO IR trigger, deploy.sh |
-| `demo/` | docker-compose.yml, .env.example |
-| `models/` | .pt, .onnx, .engine |
-| `scripts/` | collect_data.py, train.sh, build.sh, export_trt.sh |
-| `docker/` | Dockerfile.training, Dockerfile.demo |
-| `tests/` | ONNX/TRT parity tests, debounce unit tests |
-| `docs/` | DESIGN_REQUIREMENTS.md, ARCHITECTURE.md |
+| `training/` | dataset.py ✓, train.py ☐, augmentations.py ☐ (low-light), export.py ☐ |
+| `inference/` | ☐ Capture, Preprocessor, OnnxBackend, TrtBackend, Postprocessor, BowlTracker, DebounceEngine, HTTP server |
+| `notification/` | ☐ Telegram notifier |
+| `deployment/` | ☐ GStreamer config, systemd unit, GPIO IR trigger, deploy.sh |
+| `demo/` | .env.example ✓; docker-compose.yml ☐ |
+| `models/` | ⏳ .pt, .onnx, .engine (gitignored) |
+| `scripts/` | collect_data.py ✓, organise_raw.py ✓, validate_labels.py ✓, split_dataset.py ✓; Phase 5: build.sh ☐, export_trt.sh ☐ |
+| `docker/` | ☐ Dockerfile.training, Dockerfile.demo |
+| `tests/` | ✓ organise / validate / split / BowlDataset; ☐ Phase 2 ONNX parity, Phase 3 debounce unit tests |
+| `docs/` | DESIGN_REQUIREMENTS.md ✓, ARCHITECTURE.md ✓ |
 
 ---
 
