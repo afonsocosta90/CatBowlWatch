@@ -19,3 +19,15 @@ build/
 
 # macOS
 .DS_Store
+
+# Dataset — raw drops + generated splits. data/videos/ and data/data.yaml stay tracked.
+data/raw/
+data/images/train/
+data/images/val/
+data/images/test/
+data/labels/train/
+data/labels/val/
+data/labels/test/
+
+# Python test cache
+.pytest_cache/

@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "catbowlwatch"
+version = "0.1.0"
+description = "Edge ML pipeline: Jetson Nano + YOLOv8n + C++17 service + Telegram alerts"
+authors = ["Afonso Costa <afonsocosta90@gmail.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+opencv-python = "^4.8"
+numpy = ">=1.26,<3.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+
+# Heavy ML deps — opt in with `poetry install --with training` when starting Phase 2.
+[tool.poetry.group.training]
+optional = true
+
+[tool.poetry.group.training.dependencies]
+torch = "^2.1"
+torchvision = ">=0.16"
+ultralytics = "^8.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

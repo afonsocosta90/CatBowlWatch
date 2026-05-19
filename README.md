@@ -95,6 +95,21 @@ catbowlwatch/
 
 ---
 
+## Dataset Pipeline (Phase 1)
+
+```bash
+# Drop iPhone videos in data/raw/incoming/, then:
+make collect           # sample frames from videos (1 fps default)
+# Label the resulting frames in Roboflow (classes: bowl_empty, bowl_not_empty;
+# export YOLOv8 format, NO split). Unpack the zip into data/raw/labelled/.
+make data              # organise → validate → split 70/15/15 + write data/data.yaml
+make test              # pytest
+```
+
+Override the split ratios or seed: `make split SPLIT_RATIOS="0.8 0.1 0.1" SEED=7`. Raw drops and split outputs are gitignored; `data/data.yaml` and `data/videos/sample_video.mp4` are committed.
+
+---
+
 ## Prerequisites
 
 - Python ≥ 3.10, PyTorch ≥ 2.1, Ultralytics ≥ 8.1
