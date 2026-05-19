@@ -6,7 +6,7 @@ Two cat food bowls. One camera. Fully automatic detection, no manual ROI. When e
 
 Built as a portfolio piece demonstrating end-to-end ML-to-C++ edge deployment: data collection, training, ONNX inference, debounce logic, real-time notification, and hardware deployment on Jetson Nano — all from scratch.
 
-> **Status (2026-05-19):** Phase 1 (Data Collection) is **partly done**. Dataset pipeline (`scripts/organise_raw.py`, `validate_labels.py`, `split_dataset.py`), Poetry env, Makefile, and a 21-test suite are in place. iPhone capture → Roboflow labelling → `make data` is the active work to reach the Phase 1 exit bar (≥ 200 labelled images + `sample_video.mp4`). The demo and inference service land in Phases 3–4 and are not yet runnable.
+> **Status (2026-05-19):** Phases 1a, 2, and the Phase 3 toolchain scaffold are done. Phase 1b (iPhone footage + Roboflow labelling → ≥ 200 images) is the active data-collection work. Phase 3 real C++ components are being implemented — the toolchain has been validated on **macOS Apple Silicon** and WSL2 Ubuntu (OpenCV 4.13 + spdlog 1.14.1 + ONNX Runtime 1.20.1, `ctest` passing).
 
 ---
 
@@ -78,16 +78,21 @@ catbowlwatch/
 │   ├── videos/             ⏳ sample_video.mp4 to be committed
 │   └── data.yaml           ⏳ produced by `make split`
 ├── scripts/
-│   ├── collect_data.py ✓   # frame sampler (video or webcam)
-│   ├── organise_raw.py ✓   # separate flat image/label exports by stem
-│   ├── validate_labels.py ✓# YOLO label sanity check
-│   └── split_dataset.py ✓  # seeded 70/15/15 split + data.yaml writer
+│   ├── collect_data.py ✓       # frame sampler (video or webcam)
+│   ├── organise_raw.py ✓       # separate flat image/label exports by stem
+│   ├── validate_labels.py ✓    # YOLO label sanity check
+│   ├── split_dataset.py ✓      # seeded 70/15/15 split + data.yaml writer
+│   ├── setup_wsl_dev.sh ✓      # WSL2 Ubuntu C++ toolchain bootstrap
+│   └── setup_macos_dev.sh ✓    # macOS (Apple Silicon / Intel) C++ toolchain bootstrap
 ├── training/
-│   ├── dataset.py ✓        # PyTorch BowlDataset (used in Phase 2)
-│   ├── train.py ☐          # Phase 2 — Ultralytics training entry
-│   ├── augmentations.py ☐  # Phase 2 — low-light transforms (match inference)
-│   └── export.py ☐         # Phase 2 — .pt → ONNX opset 17
-├── inference/              ☐ Phase 3 — C++17 ONNX/TensorRT service
+│   ├── dataset.py ✓        # PyTorch BowlDataset
+│   ├── augmentations.py ✓  # low-light adaptive preprocessing (CLAHE, matches C++ Preprocessor)
+│   ├── train.py ✓          # Ultralytics YOLOv8n training entry; copies best.pt → models/
+│   └── export.py ✓         # .pt → ONNX opset 17 with shape verification [1,6,8400]
+├── inference/              ⏳ Phase 3 — C++17 ONNX/TensorRT service (scaffold ✓, components in progress)
+│   ├── CMakeLists.txt ✓    # FetchContent spdlog/cpp-httplib/gtest; OpenCV + ONNX Runtime
+│   ├── src/main.cpp ✓      # smoke binary (toolchain validator — will become real entrypoint)
+│   └── tests/test_smoke.cpp ✓  # GoogleTest Smoke.ToolchainOk
 ├── notification/           ☐ Phase 4 — Telegram notifier
 ├── deployment/             ☐ Phase 5 — GStreamer config, systemd, GPIO
 ├── demo/
@@ -113,8 +118,8 @@ catbowlwatch/
 | 0 | Documentation | — | ✓ Done |
 | 1a | Phase 1 plumbing (scripts, Makefile, Poetry env, tests) | Laptop | ✓ Done |
 | 1b | Phase 1 data capture & labelling (≥ 200 images + sample video) | Laptop | **In Progress** |
-| 2 | Training Pipeline | Laptop / Colab | Planned |
-| 3 | Inference Service (ONNX) | Laptop | Planned |
+| 2 | Training Pipeline (`augmentations.py`, `train.py`, `export.py`) | Laptop / Colab | ✓ Done (gated on 1b data for E2E run) |
+| 3 | Inference Service (C++17, ONNX) — toolchain scaffold | Laptop (macOS + WSL2) | ✓ Scaffold done — components in progress |
 | 4 | Notification & Demo (Docker) | Laptop | Planned |
 | 5 | Hardware Deployment & TensorRT Swap | Jetson Nano | Pending hardware |
 
@@ -141,13 +146,13 @@ Override the split ratios or seed: `make split SPLIT_RATIOS="0.8 0.1 0.1" SEED=7
 
 **Phase 1b (now):** capture iPhone footage of the actual bowl setup → label in Roboflow → unzip into `data/raw/labelled/` → `make data`. Target ≥ 200 labelled images across both bowl states, varied lighting, with cat present/absent. Pick the best 20–30 s clip with an empty bowl from frame 1 and commit it to `data/videos/sample_video.mp4`. See the [iPhone labelling workflow notes](docs/DESIGN_REQUIREMENTS.md) and [labelling rules for two bowls](CLAUDE.md#dataset-pipeline-phase-1).
 
-**Phase 2 (after Phase 1b exits):**
+**Phase 3 (now — C++ inference service components):** Capture → Preprocessor → OnnxBackend → Postprocessor → BowlTracker → DebounceEngine → HttpServer. All contracts are defined in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The toolchain (OpenCV 4.13, ONNX Runtime 1.20.1, spdlog 1.14.1, GoogleTest) is validated on macOS Apple Silicon and WSL2 Ubuntu.
+
+**Phase 2 E2E run (after Phase 1b exits):**
 
 - `poetry install --with training` to bring in `torch`, `torchvision`, `ultralytics`
-- `training/train.py` — Ultralytics YOLOv8n training entry; target `mAP50 ≥ 0.80`
-- `training/augmentations.py` — low-light / CLAHE transforms (must match inference-time preprocessing — see [docs/ARCHITECTURE.md §6](docs/ARCHITECTURE.md))
-- `training/export.py` — `.pt → catbowlwatch.onnx` (opset 17); verify output shape `[1, 6, 8400]`
-- Add `tests/test_onnx_export.py` — shape + sanity checks on the exported ONNX
+- `make train` then `make export-onnx` — produces `models/catbowlwatch.onnx`; target `mAP50 ≥ 0.80`
+- Phase 3 OnnxBackend picks up the model via `MODEL_PATH` env var
 
 ---
 

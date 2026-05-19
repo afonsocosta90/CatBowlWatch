@@ -51,9 +51,16 @@ if(NOT DEFINED ONNXRUNTIME_ROOT)
     endif()
 endif()
 if(NOT ONNXRUNTIME_ROOT)
-    message(FATAL_ERROR
-        "ONNXRUNTIME_ROOT not set. Run scripts/setup_wsl_dev.sh first, then:\n"
-        "    export ONNXRUNTIME_ROOT=~/onnxruntime-linux-x64-<ver>")
+    if(APPLE)
+        message(FATAL_ERROR
+            "ONNXRUNTIME_ROOT not set. Run scripts/setup_macos_dev.sh first, then:\n"
+            "    export ONNXRUNTIME_ROOT=~/onnxruntime-osx-arm64-<ver>  # Apple Silicon\n"
+            "    export ONNXRUNTIME_ROOT=~/onnxruntime-osx-x86_64-<ver> # Intel Mac")
+    else()
+        message(FATAL_ERROR
+            "ONNXRUNTIME_ROOT not set. Run scripts/setup_wsl_dev.sh first, then:\n"
+            "    export ONNXRUNTIME_ROOT=~/onnxruntime-linux-x64-<ver>")
+    endif()
 endif()
 
 find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h

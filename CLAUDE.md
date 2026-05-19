@@ -32,12 +32,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Phase 3 — toolchain scaffold (started early in WSL2 Ubuntu):**
 - `scripts/setup_wsl_dev.sh` ✓ — apt-installs build-essential / cmake / pkg-config / libopencv-dev / libcurl4-openssl-dev; downloads ONNX Runtime C++ 1.20.1 release tarball to `$HOME/onnxruntime-linux-x64-<ver>/`. TensorRT intentionally not installed (laptop default is `WITH_TENSORRT=OFF`).
+- `scripts/setup_macos_dev.sh` ✓ — `brew install cmake opencv`; downloads ONNX Runtime C++ 1.20.1 arm64 (or x86_64) to `$HOME/onnxruntime-osx-<arch>-<ver>/`. Mirrors the WSL script for macOS.
 - `inference/CMakeLists.txt` ✓ — top-level CMake. `WITH_TENSORRT=OFF` default; `find_package(OpenCV REQUIRED)`; ONNX Runtime imported via `ONNXRUNTIME_ROOT` env or `-D` arg; spdlog (v1.14.1), cpp-httplib (v0.18.1), GoogleTest (v1.15.2) vendored via FetchContent.
 - `inference/src/main.cpp` ✓ — smoke binary `catbowlwatch_smoke` that prints OpenCV / spdlog / ONNX Runtime versions and instantiates an `httplib::Server` to confirm linkage. This is a toolchain validator only; will be replaced by the real service entrypoint once components land.
 - `inference/tests/test_smoke.cpp` ✓ — GoogleTest smoke (`Smoke.ToolchainOk`) to confirm `ctest --output-on-failure` works.
-- ☐ Real components — Capture, Preprocessor, OnnxBackend, Postprocessor, BowlTracker, DebounceEngine, HttpServer. All gated on the WSL toolchain validating end-to-end first.
+- ⏳ Real components — Capture, Preprocessor, OnnxBackend, Postprocessor, BowlTracker, DebounceEngine, HttpServer. Toolchain validated on macOS Apple Silicon and WSL2 Ubuntu ✓ — components in progress.
 
-**Phase 3 build sequence** (inside WSL Ubuntu):
+**Phase 3 build sequence — macOS (Apple Silicon):**
+```bash
+bash scripts/setup_macos_dev.sh
+export ONNXRUNTIME_ROOT=~/onnxruntime-osx-arm64-1.20.1
+cd inference
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DWITH_TENSORRT=OFF
+cmake --build build -j$(sysctl -n hw.logicalcpu)
+ctest --test-dir build --output-on-failure
+DYLD_LIBRARY_PATH=$ONNXRUNTIME_ROOT/lib ./build/src/catbowlwatch_smoke
+```
+
+**Phase 3 build sequence — WSL2 Ubuntu:**
 ```bash
 bash scripts/setup_wsl_dev.sh
 export ONNXRUNTIME_ROOT=~/onnxruntime-linux-x64-1.20.1

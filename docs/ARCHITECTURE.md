@@ -1,6 +1,6 @@
 # CatBowlWatch — Architecture
 
-> **Status:** Phase 1b in progress (awaiting real labelled images). Phase 2 scaffolds landed (`augmentations.py`, `train.py`, `export.py` with ONNX shape verification). Phase 3 toolchain scaffold landed (`scripts/setup_wsl_dev.sh`, `inference/CMakeLists.txt`, smoke binary + gtest harness) — build chain pending validation inside WSL2 Ubuntu before real C++ components are layered on.
+> **Status:** Phase 1b in progress (awaiting real labelled images). Phase 2 scaffolds landed (`augmentations.py`, `train.py`, `export.py` with ONNX shape verification). Phase 3 toolchain scaffold validated on **macOS (Apple Silicon)** and WSL2 Ubuntu — OpenCV 4.13, spdlog 1.14.1, ONNX Runtime 1.20.1, GoogleTest 1.15.2 all linking and passing `ctest`. Real C++ components (Capture → Preprocessor → OnnxBackend → Postprocessor → BowlTracker → DebounceEngine → HttpServer) are being layered on.
 > **Last updated:** 2026-05-19
 
 ---
@@ -229,7 +229,7 @@ The brightness threshold and low-light transform parameters are matched to the t
 | `deployment/` | ☐ GStreamer config, systemd unit, GPIO IR trigger, deploy.sh |
 | `demo/` | .env.example ✓; docker-compose.yml ☐ |
 | `models/` | ⏳ .pt, .onnx, .engine (gitignored) |
-| `scripts/` | collect_data.py ✓, organise_raw.py ✓, validate_labels.py ✓, split_dataset.py ✓, _generate_synthetic.py ✓ (dev aid), setup_wsl_dev.sh ✓; Phase 5: build.sh ☐, export_trt.sh ☐ |
+| `scripts/` | collect_data.py ✓, organise_raw.py ✓, validate_labels.py ✓, split_dataset.py ✓, _generate_synthetic.py ✓ (dev aid), setup_wsl_dev.sh ✓, setup_macos_dev.sh ✓; Phase 5: build.sh ☐, export_trt.sh ☐ |
 | `docker/` | ☐ Dockerfile.training, Dockerfile.demo |
 | `tests/` | ✓ organise / validate / split / BowlDataset / augmentations / train / export; ☐ Phase 2 ONNX/TRT parity (needs a real `.onnx`), Phase 3 debounce unit tests |
 | `docs/` | DESIGN_REQUIREMENTS.md ✓, ARCHITECTURE.md ✓ |
