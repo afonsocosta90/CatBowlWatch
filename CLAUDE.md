@@ -30,6 +30,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Phase 2 runnable end-to-end** requires `poetry install --with training` AND a populated `data/data.yaml` (so ultimately still gated on Phase 1b's ≥ 200 labelled images).
 
+**Phase 3 — toolchain scaffold (started early in WSL2 Ubuntu):**
+- `scripts/setup_wsl_dev.sh` ✓ — apt-installs build-essential / cmake / pkg-config / libopencv-dev / libcurl4-openssl-dev; downloads ONNX Runtime C++ 1.20.1 release tarball to `$HOME/onnxruntime-linux-x64-<ver>/`. TensorRT intentionally not installed (laptop default is `WITH_TENSORRT=OFF`).
+- `inference/CMakeLists.txt` ✓ — top-level CMake. `WITH_TENSORRT=OFF` default; `find_package(OpenCV REQUIRED)`; ONNX Runtime imported via `ONNXRUNTIME_ROOT` env or `-D` arg; spdlog (v1.14.1), cpp-httplib (v0.18.1), GoogleTest (v1.15.2) vendored via FetchContent.
+- `inference/src/main.cpp` ✓ — smoke binary `catbowlwatch_smoke` that prints OpenCV / spdlog / ONNX Runtime versions and instantiates an `httplib::Server` to confirm linkage. This is a toolchain validator only; will be replaced by the real service entrypoint once components land.
+- `inference/tests/test_smoke.cpp` ✓ — GoogleTest smoke (`Smoke.ToolchainOk`) to confirm `ctest --output-on-failure` works.
+- ☐ Real components — Capture, Preprocessor, OnnxBackend, Postprocessor, BowlTracker, DebounceEngine, HttpServer. All gated on the WSL toolchain validating end-to-end first.
+
+**Phase 3 build sequence** (inside WSL Ubuntu):
+```bash
+bash scripts/setup_wsl_dev.sh
+export ONNXRUNTIME_ROOT=~/onnxruntime-linux-x64-1.20.1
+cd inference
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DWITH_TENSORRT=OFF
+cmake --build build -j$(nproc)
+ctest --test-dir build --output-on-failure
+./build/src/catbowlwatch_smoke   # should print versions and "OK"
+```
+
 Canonical specs (do not duplicate — link, then read):
 - `docs/DESIGN_REQUIREMENTS.md` — functional/non-functional requirements, Telegram setup, MVP scope.
 - `docs/ARCHITECTURE.md` — component contracts, data flow, swap plan.
