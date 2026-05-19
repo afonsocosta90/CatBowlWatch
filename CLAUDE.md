@@ -36,7 +36,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `inference/CMakeLists.txt` ✓ — top-level CMake. `WITH_TENSORRT=OFF` default; `find_package(OpenCV REQUIRED)`; ONNX Runtime imported via `ONNXRUNTIME_ROOT` env or `-D` arg; spdlog (v1.14.1), cpp-httplib (v0.18.1), GoogleTest (v1.15.2) vendored via FetchContent.
 - `inference/src/main.cpp` ✓ — smoke binary `catbowlwatch_smoke` that prints OpenCV / spdlog / ONNX Runtime versions and instantiates an `httplib::Server` to confirm linkage. This is a toolchain validator only; will be replaced by the real service entrypoint once components land.
 - `inference/tests/test_smoke.cpp` ✓ — GoogleTest smoke (`Smoke.ToolchainOk`) to confirm `ctest --output-on-failure` works.
-- ⏳ Real components — Capture, Preprocessor, OnnxBackend, Postprocessor, BowlTracker, DebounceEngine, HttpServer. Toolchain validated on macOS Apple Silicon and WSL2 Ubuntu ✓ — components in progress.
+- ✓ Real components: `Capture`, `Preprocessor`, `OnnxBackend`, `Postprocessor`, `BowlTracker`, `DebounceEngine`, `HttpServer`, `service_main.cpp` — all implemented. 25 C++ unit tests passing (`ctest`). TelegramNotifier deferred to Phase 4.
+- `inference/src/catbowlwatch_lib` (static) links against OpenCV, spdlog, cpp-httplib, ONNX Runtime.
+- `inference/src/catbowlwatch` binary is the real service entry point (requires `MODEL_PATH` env var).
+- `inference/src/catbowlwatch_smoke` kept for CI toolchain checks.
 
 **Phase 3 build sequence — macOS (Apple Silicon):**
 ```bash
@@ -142,6 +145,7 @@ All runtime config via env vars (see `demo/.env.example` for full list):
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | — | Required |
 | `TELEGRAM_CHAT_ID` | — | Required |
+| `VIDEO_SOURCE` | `0` | File path or webcam index string |
 | `INFERENCE_BACKEND` | `onnx` | `onnx` or `tensorrt` |
 | `MODEL_PATH` | — | Path to `.onnx` or `.engine` |
 | `DEBOUNCE_SECONDS` | `60` | Demo overrides to `8` |
