@@ -28,7 +28,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph Capture["Frame Capture Layer"]
-        A1["GStreamer nvarguscamerasrc<br/>(Jetson — Phase 5)"]
+        A1["GStreamer nvarguscamerasrc<br/>(Orin Nano — Phase 5)"]
         A2["OpenCV VideoCapture<br/>(Laptop — Phases 1-4)"]
     end
 
@@ -96,7 +96,7 @@ sequenceDiagram
 ### 4.2 Preprocessor
 - **Output:** `float32` tensor `[1, 3, 640, 640]`, RGB channel order, pixel values in `[0, 1]`.
 - If mean frame brightness < `BRIGHTNESS_THRESHOLD` (default: 50/255): apply IR simulation transform (grayscale → 3-channel, contrast stretch).
-- On Jetson: low-light condition also triggers GPIO IR floodlight.
+- On Orin Nano: low-light condition also triggers GPIO IR floodlight.
 
 ### 4.3 YOLOv8n Inference
 - **Output:** Raw ONNX output `[1, 6, 8400]` (640×640 input, 2 classes). The first dimension is batch, the second is `4 bbox + num_classes`, the third is the number of anchors.
@@ -106,7 +106,7 @@ sequenceDiagram
   - Verify actual shape before writing C++ postprocessor: `python -c "import onnxruntime as ort, numpy as np; s=ort.InferenceSession('models/catbowlwatch.onnx'); print(s.run(None,{s.get_inputs()[0].name:np.zeros((1,3,640,640),dtype='f4')})[0].shape)"`
 - **Backend contract:** Abstract `InferenceBackend` interface with two concrete implementations:
   - `OnnxBackend` — wraps ONNX Runtime session (laptop, CPU).
-  - `TrtBackend` — wraps TensorRT execution context (Jetson, FP16).
+  - `TrtBackend` — wraps TensorRT execution context (Orin Nano, FP16).
 - Swap via config flag: `INFERENCE_BACKEND=onnx|tensorrt`. No C++ code change required.
 
 ### 4.4 Postprocessor
@@ -218,7 +218,7 @@ flowchart LR
     FRAME["Raw frame"] --> BRIGHT{"mean brightness<br/>< threshold?"}
     BRIGHT -->|No| NORM["Normal inference path"]
     BRIGHT -->|Yes, laptop| IRSIM["Low-light transform<br/>grayscale + CLAHE"]
-    BRIGHT -->|Yes, Jetson| GPIO["GPIO IR floodlight ON<br/>+ low-light transform"]
+    BRIGHT -->|Yes, Orin Nano| GPIO["GPIO IR floodlight ON<br/>+ low-light transform"]
     IRSIM --> INF["Inference"]
     GPIO --> INF
     NORM --> INF
@@ -253,7 +253,7 @@ The brightness threshold and low-light transform parameters are matched to the t
 |---|---|---|---|
 | Single YOLOv8n for detect+classify | Yes | Separate detector + classifier | One inference pass, simpler TRT export, fewer moving parts |
 | Bowl identity by x-coordinate | Yes | SORT/DeepSORT tracker | Camera is fixed overhead; x-ordering is stable and deterministic |
-| Debounce state in-memory | Yes | Redis / SQLite | Zero deps on Jetson; restart resets timers — acceptable for MVP |
+| Debounce state in-memory | Yes | Redis / SQLite | Zero deps on Orin Nano; restart resets timers — acceptable for MVP |
 | C++17 inference service | Yes | Python FastAPI | Portfolio goal; no GIL; clean TRT integration |
 | ONNX on laptop / TRT on Orin Nano | Yes | TRT everywhere | TRT requires CUDA; laptop-first constraint demands ONNX for dev |
 | Train on Windows AMD/ROCm, infer on Orin Nano | Yes | Train on Orin Nano GPU | ROCm PyTorch exposes the same `cuda` API — no code changes. ONNX is the hardware-agnostic handoff. Dedicated training machine avoids shared-memory pressure on Orin Nano. |

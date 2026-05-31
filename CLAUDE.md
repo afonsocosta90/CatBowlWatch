@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-**Phases 1a, 2, and 3 are done. Phase 1b (data capture & labelling) is in progress.** Phases 1–5 are planned sequentially: do not implement features from a later phase when working in an earlier one. Phase boundaries are defined in `docs/DESIGN_REQUIREMENTS.md §9`.
+**Phases 1a, 2, 3, and 4a are done. Phase 1b (data capture & labelling) is in progress.** Phases 1–5 are planned sequentially: do not implement features from a later phase when working in an earlier one. Phase boundaries are defined in `docs/DESIGN_REQUIREMENTS.md §9`.
 
 **What exists today (Phase 1a — done):**
 - Poetry env: `pyproject.toml` (base: `opencv-python`, `numpy`, `pytest`; optional `training` group: `torch`, `torchvision`, `ultralytics`).
@@ -44,13 +44,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Phase 2 runnable end-to-end** requires `poetry install --with training` AND a populated `data/data.yaml` (so ultimately still gated on Phase 1b's ≥ 200 labelled images).
 
-**Phase 3 — done (toolchain + all real C++ components implemented, 25 tests passing):**
+**Phase 3 — done (toolchain + all real C++ components implemented, 25 tests passing — 38 total including Phase 4a):**
 - `scripts/setup_wsl_dev.sh` ✓ — apt-installs build-essential / cmake / pkg-config / libopencv-dev / libcurl4-openssl-dev; downloads ONNX Runtime C++ 1.20.1 release tarball to `$HOME/onnxruntime-linux-x64-<ver>/`. TensorRT intentionally not installed (laptop default is `WITH_TENSORRT=OFF`).
 - `scripts/setup_macos_dev.sh` ✓ — `brew install cmake opencv`; downloads ONNX Runtime C++ 1.20.1 arm64 (or x86_64) to `$HOME/onnxruntime-osx-<arch>-<ver>/`. Mirrors the WSL script for macOS.
 - `inference/CMakeLists.txt` ✓ — top-level CMake. `WITH_TENSORRT=OFF` default; `find_package(OpenCV REQUIRED)`; ONNX Runtime imported via `ONNXRUNTIME_ROOT` env or `-D` arg; spdlog (v1.14.1), cpp-httplib (v0.18.1), GoogleTest (v1.15.2) vendored via FetchContent.
 - `inference/src/main.cpp` ✓ — smoke binary `catbowlwatch_smoke` that prints OpenCV / spdlog / ONNX Runtime versions and instantiates an `httplib::Server` to confirm linkage. This is a toolchain validator only; will be replaced by the real service entrypoint once components land.
 - `inference/tests/test_smoke.cpp` ✓ — GoogleTest smoke (`Smoke.ToolchainOk`) to confirm `ctest --output-on-failure` works.
-- ✓ Real components: `Capture`, `Preprocessor`, `OnnxBackend`, `Postprocessor`, `BowlTracker`, `DebounceEngine`, `HttpServer`, `service_main.cpp` — all implemented. 25 C++ unit tests passing (`ctest`). TelegramNotifier deferred to Phase 4.
+- ✓ Real components: `Capture`, `Preprocessor`, `OnnxBackend`, `Postprocessor`, `BowlTracker`, `DebounceEngine`, `HttpServer`, `TelegramNotifier`, `service_main.cpp` — all implemented. 38 C++ unit tests passing (`ctest`).
 - `inference/src/catbowlwatch_lib` (static) links against OpenCV, spdlog, cpp-httplib, ONNX Runtime.
 - `inference/src/catbowlwatch` binary is the real service entry point (requires `MODEL_PATH` env var).
 - `inference/src/catbowlwatch_smoke` kept for CI toolchain checks.
@@ -99,7 +99,7 @@ poetry run python scripts/collect_data.py --source 0 --interval 0.5  # webcam
 # Phase 2 deps (when starting training work)
 poetry install --with training  # adds torch, torchvision, ultralytics
 
-# Demo (Docker — no Jetson needed)  [planned]
+# Demo (Docker — no Orin Nano needed)  [planned]
 cp demo/.env.example .env   # fill in TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
 docker compose -f docker/demo.yml up
 
@@ -145,7 +145,7 @@ Capture → Preprocessor → YOLOv8n → Postprocessor → Bowl Tracker → Debo
 
 **Capture:** `cv::VideoCapture` on laptop; GStreamer `nvarguscamerasrc` on Orin Nano (Phase 5 swap — interface identical, single `read(frame)` call).
 
-**Preprocessor:** outputs `float32 [1,3,640,640]`, RGB, `[0,1]`. If mean frame brightness < `BRIGHTNESS_THRESHOLD` (default 50/255), apply low-light transform (grayscale → 3-channel + CLAHE). On Jetson this also triggers a GPIO IR floodlight. The same transform parameters are used in training-time augmentation so train and inference see the same distribution.
+**Preprocessor:** outputs `float32 [1,3,640,640]`, RGB, `[0,1]`. If mean frame brightness < `BRIGHTNESS_THRESHOLD` (default 50/255), apply low-light transform (grayscale → 3-channel + CLAHE). On Orin Nano this also triggers a GPIO IR floodlight. The same transform parameters are used in training-time augmentation so train and inference see the same distribution.
 
 **ONNX output and postprocessor:** Raw output is `[1, 6, 8400]`. Postprocessor **must transpose to `[8400, 6]`** before iterating. Columns after transpose: `[cx, cy, w, h, bowl_empty_score, bowl_not_empty_score]`. There is no single confidence column — compute `confidence = max(col[4], col[5])`, `class_id = argmax(col[4], col[5])`. NMS: IoU 0.45, conf 0.50. **Class map:** `0 = bowl_empty`, `1 = bowl_not_empty`. **Bowl identity** by x-coordinate: left = `bowl_1`, right = `bowl_2` (camera is fixed overhead, so x-ordering is stable).
 

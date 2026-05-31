@@ -6,7 +6,7 @@ Two cat food bowls. One camera. Fully automatic detection, no manual ROI. When e
 
 Built as a portfolio piece demonstrating end-to-end ML-to-C++ edge deployment: data collection, GPU training (Windows AMD/ROCm), ONNX inference, debounce logic, real-time notification, and TensorRT-benchmarked deployment on Orin Nano — all from scratch.
 
-> **Status (2026-05-31):** Phases 1a, 2, 3, and **4a (TelegramNotifier)** are complete. Phase 1b (iPhone footage + Roboflow labelling → ≥ 200 images) is the active data-collection work. The full C++17 inference service including `TelegramNotifier` (libcurl `POST /sendPhoto`, 3× retry, dedicated thread) is wired in; **37 C++ unit tests pass** on macOS Apple Silicon and WSL2 Ubuntu. `scripts/benchmark_inference.py` (Phase 5 KPI tool) is complete with **15 Python tests** passing. **Training runs on a Windows PC with AMD GPU + ROCm PyTorch**; ONNX is the hardware-agnostic handoff to the Orin Nano. The service binary needs `MODEL_PATH` pointing to a trained `.onnx` (gated on Phase 1b).
+> **Status (2026-05-31):** Phases 1a, 2, 3, and **4a (TelegramNotifier)** are complete. Phase 1b (iPhone footage + Roboflow labelling → ≥ 200 images) is the active data-collection work. The full C++17 inference service including `TelegramNotifier` (libcurl `POST /sendPhoto`, 3× retry, dedicated thread) is wired in; **38 C++ unit tests pass** on macOS Apple Silicon and WSL2 Ubuntu. `scripts/benchmark_inference.py` (Phase 5 KPI tool) is complete with **15 Python tests** passing (56 Python tests total). **Training runs on a Windows PC with AMD GPU + ROCm PyTorch**; ONNX is the hardware-agnostic handoff to the Orin Nano. The service binary needs `MODEL_PATH` pointing to a trained `.onnx` (gated on Phase 1b).
 
 ---
 
@@ -20,7 +20,7 @@ cp demo/.env.example .env     # fill in your Telegram credentials
 docker compose -f docker/demo.yml up
 ```
 
-The demo loops `data/videos/sample_video.mp4` (empty bowl visible from frame 1), runs inference with `DEBOUNCE_SECONDS=8`, and fires a real Telegram photo notification. **Notification arrives ~15 seconds after the service starts.** No Jetson needed.
+The demo loops `data/videos/sample_video.mp4` (empty bowl visible from frame 1), runs inference with `DEBOUNCE_SECONDS=8`, and fires a real Telegram photo notification. **Notification arrives ~15 seconds after the service starts.** No Orin Nano needed.
 
 > Production deployments use the 60 s debounce default. The demo override is explicit — see `demo/.env.example`.
 
@@ -30,8 +30,8 @@ The demo loops `data/videos/sample_video.mp4` (empty bowl visible from frame 1),
 
 ```mermaid
 flowchart TD
-    CAM["CSI IMX219<br/>(Jetson) / Video file<br/>(Laptop)"]
-    CAPTURE["Frame Capture<br/>GStreamer (Jetson) / OpenCV (Laptop)"]
+    CAM["CSI IMX219<br/>(Orin Nano) / Video file<br/>(Laptop)"]
+    CAPTURE["Frame Capture<br/>GStreamer (Orin Nano) / OpenCV (Laptop)"]
     INFER["YOLOv8n Inference<br/>ONNX Runtime (dev) / TensorRT FP16 (prod)"]
     CLASSIFY["Bowl Classifier<br/>Detect both bowls — empty / not_empty"]
     DEBOUNCE["Debounce Logic<br/>60 s continuous empty per bowl"]
@@ -107,14 +107,14 @@ catbowlwatch/
 │   │   ├── telegram_notifier ✓ # Phase 4a — libcurl POST /sendPhoto, 3× retry, dedicated thread
 │   │   ├── service_main.cpp ✓  # real service entry point (needs MODEL_PATH)
 │   │   └── main.cpp ✓          # toolchain smoke binary (CI validator)
-│   └── tests/ ✓                # 37 GoogleTest cases (Phase 3: 25 + Phase 4a TelegramNotifier: 12)
+│   └── tests/ ✓                # 38 GoogleTest cases (smoke: 1 + Phase 3: 24 + Phase 4a TelegramNotifier: 13)
 ├── notification/           (placeholder — TelegramNotifier is in inference/src/)
 ├── deployment/             ☐ Phase 5 — GStreamer config, systemd, GPIO
 ├── demo/
 │   └── .env.example ✓      # Telegram + inference env vars
 ├── docker/                 ☐ Phase 4 — training + demo Dockerfiles
 ├── models/                 ⏳ .pt/.onnx/.engine artifacts (gitignored)
-├── tests/ ✓                # 41 Python unit tests (Phase 1+2); 25 C++ unit tests (Phase 3)
+├── tests/ ✓                # 56 Python unit tests (Phases 1+2+5); 38 C++ unit tests (Phases 3+4a)
 ├── docs/
 │   ├── DESIGN_REQUIREMENTS.md ✓
 │   ├── ARCHITECTURE.md ✓
@@ -136,7 +136,7 @@ catbowlwatch/
 | 1b | Phase 1 data capture & labelling (≥ 200 images + sample video) | Laptop | **In Progress** |
 | 2 | Training Pipeline (`augmentations.py`, `train.py`, `export.py`) | Laptop / Colab | ✓ Done (gated on 1b data for E2E run) |
 | 3 | Inference Service (C++17, ONNX) — full pipeline + 25 unit tests | Laptop (macOS + WSL2) | ✓ Done (needs trained model to run E2E) |
-| 4a | TelegramNotifier (C++ libcurl `POST /sendPhoto`, 3× retry, 12 unit tests) | Laptop | ✓ Done |
+| 4a | TelegramNotifier (C++ libcurl `POST /sendPhoto`, 3× retry, 13 unit tests) | Laptop | ✓ Done |
 | 4b | Docker demo (`docker/demo.yml` looping `sample_video.mp4`) | Laptop | **Next** |
 | 5 | Hardware Deployment & KPI Benchmark | Orin Nano | Hardware in hand — entry gated on Phase 4 |
 

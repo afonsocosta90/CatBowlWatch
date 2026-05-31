@@ -39,7 +39,7 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 - Default port: `8080` (configurable).
 
 ### FR-6 — Demo Mode
-- `docker compose up` loops `data/videos/sample_video.mp4`, fires a real Telegram alert, requires no Jetson hardware.
+- `docker compose up` loops `data/videos/sample_video.mp4`, fires a real Telegram alert, requires no Orin Nano hardware.
 - Demo mode overrides `DEBOUNCE_SECONDS=8` (set in `demo/.env.example`). Production default is 60 s. The `sample_video.mp4` must show a bowl empty from the first frame. Telegram notification arrives ~15 s after `docker compose up`.
 - The demo debounce override is explicit and documented — not a hidden hack. Production deployments use the 60 s default via the systemd unit env block.
 
@@ -52,9 +52,9 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 | NFR-1 | Inference latency (ONNX CPU, laptop) | ≤ 200 ms / frame |
 | NFR-2 | Throughput (TensorRT FP16, Orin Nano) | ≥ 30 FPS @ 640×640. Orin Nano Ampere GPU significantly exceeds the old Nano 4GB baseline of 12–18 FPS. 416×416 fallback not required. Measured via `scripts/benchmark_inference.py`. |
 | NFR-3 | False-positive alert rate | < 1 per day under normal lighting |
-| NFR-4 | Service memory footprint (Jetson) | ≤ 512 MB RSS |
-| NFR-5 | Cold-start time (service ready, Jetson) | ≤ 10 s |
-| NFR-6 | Uptime (systemd watchdog, Jetson) | ≥ 99.5% over 30-day window |
+| NFR-4 | Service memory footprint (Orin Nano) | ≤ 512 MB RSS |
+| NFR-5 | Cold-start time (service ready, Orin Nano) | ≤ 10 s |
+| NFR-6 | Uptime (systemd watchdog, Orin Nano) | ≥ 99.5% over 30-day window |
 | NFR-7 | Dev loop: train → ONNX export → inference test | ≤ 5 min end-to-end |
 | NFR-8 | Inference benchmark coverage (Orin Nano) | All 4 backends benchmarked (`onnx-cpu`, `onnx-cuda`, `trt-fp16`, `trt-int8`); FPS + mean latency + P99 latency + RSS committed to `docs/BENCHMARKS.md` |
 
@@ -72,7 +72,7 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 | IR illumination | IR floodlight, GPIO-triggered at low ambient brightness |
 | Network | Wi-Fi or Ethernet; Telegram API reachable |
 | Power | 5V/4A barrel jack |
-| C++ logging | spdlog ≥ 1.12 (header-only, MIT) — required for structured service logging on headless Jetson |
+| C++ logging | spdlog ≥ 1.12 (header-only, MIT) — required for structured service logging on headless Orin Nano |
 | HTTP client (notification) | libcurl ≥ 7.68 — required for Telegram `POST /sendPhoto` multipart from C++ (or use Python subprocess — see ARCHITECTURE.md §4.8) |
 
 **Laptop-first constraint (Phases 1–4):** All inference, notification, and demo components must run on a development laptop (macOS or Ubuntu 22.04) with no GPU required. Training is handled separately on the Windows AMD/ROCm machine; ONNX export is the hardware-agnostic handoff to the Orin Nano.
@@ -85,7 +85,7 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 |---|---|---|
 | Architecture | YOLOv8n | Smallest YOLOv8 variant; fits Orin Nano at TRT FP16; TensorRT-friendly |
 | Export format (dev) | ONNX opset 17 | Portable, CPU-runnable, no NVIDIA dependency during development |
-| Export format (prod) | TensorRT engine (FP16) | 3–5× speedup over ONNX on Jetson; required to meet NFR-2 |
+| Export format (prod) | TensorRT engine (FP16) | 3–5× speedup over ONNX on Orin Nano; required to meet NFR-2 |
 | Classes | `bowl_empty`, `bowl_not_empty` | Detection + classification in one pass; no separate classifier network |
 | Input resolution | 640 × 640 | YOLOv8n default; **change to 416 × 416 if 30 FPS is required** — see NFR-2 |
 | Training data (Phase 1) | Representative of real deployment | Include photos of your actual bowls from day 1. Non-representative data produces a fake mAP score. Supplement with Roboflow Universe images but anchor the val set on your real setup. |
@@ -147,7 +147,7 @@ Per-bowl cooldown: 300 s after each alert. Configurable via `ALERT_COOLDOWN_SECO
 |---|---|---|
 | Normal | Ambient brightness > threshold | Standard inference |
 | Low-light (laptop) | Mean frame brightness < threshold | Grayscale + CLAHE (`cv::createCLAHE`) |
-| Low-light (Jetson prod) | Brightness heuristic | GPIO IR floodlight ON + same CLAHE transform |
+| Low-light (Orin Nano prod) | Brightness heuristic | GPIO IR floodlight ON + same CLAHE transform |
 
 The brightness threshold and CLAHE parameters are matched to the training-time augmentation pipeline so inference and training see the same distribution.
 
@@ -177,5 +177,6 @@ These are explicitly deferred. Do not add them to the inference service.
 | 1b | Phase 1 data capture & labelling | Phase 1a done | ≥ 200 labelled images (YOLO format) in `data/{images,labels}/{train,val,test}/`; `data/data.yaml` committed; `data/videos/sample_video.mp4` committed | 🔄 In Progress |
 | 2 | Training Pipeline | Phase 1b done | `training/train.py` trains YOLOv8n to `mAP50 ≥ 0.80`; `training/export.py` produces `catbowlwatch.onnx` (opset 17) with shape `[1, 6, 8400]`; ONNX-vs-runtime parity tests pass | ✅ Done (2026-05-19) — E2E run gated on Phase 1b data |
 | 3 | Inference Service | Phase 2 done | C++17 service processes video, fires debounce, `/status` + `/photo` respond; ONNX backend on laptop | ✅ Done (2026-05-19) — needs `MODEL_PATH` for E2E |
-| 4 | Notification & Demo | Phase 3 done | Telegram alert delivered end-to-end from video input on laptop; `docker compose -f docker/demo.yml up` runs the demo | 🔜 Next |
+| 4a | TelegramNotifier | Phase 3 done | C++ `TelegramNotifier` wired in `service_main.cpp`; libcurl `POST /sendPhoto`; 13 unit tests green | ✅ Done (2026-05-31) |
+| 4b | Docker demo | Phase 4a done | `docker compose -f docker/demo.yml up` loops `sample_video.mp4`, fires real Telegram alert | 🔜 Next |
 | 5 | Hardware Deployment & KPI Benchmark | Orin Nano in hand | ≥ 30 FPS TRT FP16 @ 640×640; all 4 backends benchmarked in `docs/BENCHMARKS.md`; systemd survives reboot | Entry gated on Phase 4 |
