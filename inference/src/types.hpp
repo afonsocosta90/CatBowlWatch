@@ -25,6 +25,7 @@ struct BowlState {
 struct AlertEvent {
     std::string bowl_id;
     int64_t     timestamp_ms;
+    int64_t     empty_since_ms;  // epoch ms when bowl first became empty
 };
 
 } // namespace cbw

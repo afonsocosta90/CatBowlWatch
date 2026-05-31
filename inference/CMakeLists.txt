@@ -5,7 +5,7 @@
 #     cmake --build build -j
 #     ctest --test-dir build --output-on-failure
 #
-# Jetson build (Phase 5):
+# Orin Nano build (Phase 5):
 #     cmake -B build -DCMAKE_BUILD_TYPE=Release -DWITH_TENSORRT=ON
 #
 # External deps:
@@ -43,6 +43,39 @@ target_compile_options(catbowlwatch_warnings INTERFACE
 # External dependencies
 # -----------------------------------------------------------------------------
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
+
+# libcurl: required for TelegramNotifier (POST /sendPhoto).
+# Linux:  libcurl4-openssl-dev (already in setup_wsl_dev.sh)
+# macOS:  bundled in the CLT SDK — not discoverable by FindCURL without hints.
+find_package(CURL QUIET)
+if(NOT CURL_FOUND)
+    find_library(CURL_LIBRARY NAMES curl
+        PATHS
+            /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
+            /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/usr/lib
+            /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk/usr/lib
+            /opt/homebrew/opt/curl/lib
+        NO_DEFAULT_PATH)
+    find_path(CURL_INCLUDE_DIR curl/curl.h
+        PATHS
+            /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include
+            /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/usr/include
+            /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk/usr/include
+            /opt/homebrew/opt/curl/include
+        NO_DEFAULT_PATH)
+    if(CURL_LIBRARY AND CURL_INCLUDE_DIR)
+        add_library(CURL::libcurl INTERFACE IMPORTED)
+        set_target_properties(CURL::libcurl PROPERTIES
+            INTERFACE_LINK_LIBRARIES     "${CURL_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${CURL_INCLUDE_DIR}")
+        message(STATUS "CURL (SDK fallback): ${CURL_LIBRARY}")
+    else()
+        message(FATAL_ERROR
+            "libcurl not found.\n"
+            "  Linux:  sudo apt-get install libcurl4-openssl-dev\n"
+            "  macOS:  brew install curl")
+    endif()
+endif()
 
 # ONNX Runtime: imported from $ONNXRUNTIME_ROOT
 if(NOT DEFINED ONNXRUNTIME_ROOT)

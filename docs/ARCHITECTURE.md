@@ -1,7 +1,6 @@
 # CatBowlWatch — Architecture
 
-> **Status:** Phase 1b in progress (awaiting real labelled images). Phases 2 and 3 are complete. Phase 3 C++ service (Capture → Preprocessor → OnnxBackend → Postprocessor → BowlTracker → DebounceEngine → HttpServer + `service_main.cpp`) is fully implemented with 25 unit tests passing on **macOS Apple Silicon** and WSL2 Ubuntu (OpenCV 4.13, spdlog 1.14.1, ONNX Runtime 1.20.1). Service binary needs `MODEL_PATH` to run E2E (gated on Phase 1b + training). Phase 4 (TelegramNotifier + Docker demo) is next.
-> **Last updated:** 2026-05-19
+> **Status (2026-05-31):** Phase 1b in progress (awaiting real labelled images). Phases 1a, 2, and 3 complete. C++17 service fully implemented with 25 unit tests passing on macOS Apple Silicon and WSL2 Ubuntu (OpenCV 4.13, spdlog 1.14.1, ONNX Runtime 1.20.1). Phase 4 (TelegramNotifier + Docker demo) is next. **Training machine:** Windows PC, AMD GPU, ROCm PyTorch venv — same PyTorch API, ONNX is the handoff. **Target inference hardware:** Orin Nano (JetPack 6.x, TRT 10.x). Inference KPI benchmark (`onnx-cpu` → `onnx-cuda` → `trt-fp16`) is a Phase 5 deliverable committed to `docs/BENCHMARKS.md`.
 
 ---
 
@@ -12,7 +11,7 @@ All inference, debounce logic, and notification run on a single device. No cloud
 ```mermaid
 flowchart LR
     camera["📷 CSI IMX219 Camera<br/>(live video feed)"]
-    cbw["🖥️ CatBowlWatch<br/>Edge ML service<br/>Jetson Nano / Laptop"]
+    cbw["🖥️ CatBowlWatch<br/>Edge ML service<br/>Orin Nano / Laptop"]
     telegram["✉️ Telegram Bot API<br/>(external)"]
     owner["🧑 Cat Owner<br/>(phone)"]
 
@@ -173,14 +172,26 @@ GET /photo  →  200 OK  image/jpeg  (latest annotated frame)
 
 | Step | Action | Where |
 |---|---|---|
-| 1 | Export trained `.pt` to TensorRT `.engine` on Jetson | `scripts/export_trt.sh` |
-| 2 | Set `INFERENCE_BACKEND=tensorrt` | `deployment/catbowlwatch.service` env block |
-| 3 | Set `MODEL_PATH=/models/catbowlwatch.engine` | same |
-| 4 | `systemctl restart catbowlwatch` | Jetson |
+| 1 | Copy `catbowlwatch.onnx` from training machine to Orin Nano | `scp` / USB |
+| 2 | Compile TRT FP16 engine on-device (TRT engines are device-specific) | Orin Nano |
+| 3 | Set `INFERENCE_BACKEND=tensorrt` | `deployment/catbowlwatch.service` env block |
+| 4 | Set `MODEL_PATH=/models/catbowlwatch.engine` | same |
+| 5 | `systemctl restart catbowlwatch` | Orin Nano |
+| 6 | Run `scripts/benchmark_inference.py` — commit results to `docs/BENCHMARKS.md` | Orin Nano |
+
+**TRT engine compilation (preferred — Ultralytics direct export, on-device):**
+
+```bash
+python -c "
+from ultralytics import YOLO
+YOLO('models/catbowlwatch.pt').export(format='engine', half=True, device=0, imgsz=640)
+# produces models/catbowlwatch.engine
+"
+```
 
 No C++ code changes at swap time.
 
-**Conditional compilation:** `TrtBackend` requires TensorRT headers (`NvInfer.h`) which are not available on macOS or Ubuntu without a GPU. The CMakeLists.txt must gate it behind an option:
+**Conditional compilation:** `TrtBackend` requires TensorRT headers (`NvInfer.h`, TRT 10.x on JetPack 6.x) which are not available on macOS or Ubuntu without CUDA. The CMakeLists.txt gates it:
 
 ```cmake
 option(WITH_TENSORRT "Build TensorRT backend (requires NvInfer.h)" OFF)
@@ -196,7 +207,7 @@ option(WITH_TENSORRT "Build TensorRT backend (requires NvInfer.h)" OFF)
 ```
 
 Laptop builds: `cmake -DWITH_TENSORRT=OFF ..` (default).
-Jetson builds: `cmake -DWITH_TENSORRT=ON ..`.
+Orin Nano builds: `cmake -DWITH_TENSORRT=ON ..`.
 
 ---
 
@@ -224,15 +235,15 @@ The brightness threshold and low-light transform parameters are matched to the t
 | Directory | Component(s) |
 |---|---|
 | `training/` | dataset.py ✓, augmentations.py ✓ (low-light), train.py ✓, export.py ✓ |
-| `inference/` | ✓ CMakeLists.txt, catbowlwatch_lib (Capture, Preprocessor, OnnxBackend, Postprocessor, BowlTracker, DebounceEngine, HttpServer), service_main.cpp, smoke binary; 25 unit tests; ☐ TrtBackend (Phase 5, WITH_TENSORRT=ON) |
-| `notification/` | ☐ TelegramNotifier — Phase 4 (libcurl POST /sendPhoto, 3× retry, dedicated thread) |
+| `inference/` | ✓ CMakeLists.txt, catbowlwatch_lib (Capture, Preprocessor, OnnxBackend, Postprocessor, BowlTracker, DebounceEngine, HttpServer, **TelegramNotifier**), service_main.cpp, smoke binary; 37 unit tests (25 Phase 3 + 12 TelegramNotifier); ☐ TrtBackend (Phase 5, WITH_TENSORRT=ON) |
+| `notification/` | placeholder — TelegramNotifier implemented in `inference/src/telegram_notifier.cpp` (all C++ components share the CMake build) |
 | `deployment/` | ☐ GStreamer config, systemd unit, GPIO IR trigger, deploy.sh |
 | `demo/` | .env.example ✓; docker-compose.yml ☐ |
 | `models/` | ⏳ .pt, .onnx, .engine (gitignored) |
-| `scripts/` | collect_data.py ✓, organise_raw.py ✓, validate_labels.py ✓, split_dataset.py ✓, _generate_synthetic.py ✓ (dev aid), setup_wsl_dev.sh ✓, setup_macos_dev.sh ✓; Phase 5: build.sh ☐, export_trt.sh ☐ |
+| `scripts/` | collect_data.py ✓, organise_raw.py ✓, validate_labels.py ✓, split_dataset.py ✓, _generate_synthetic.py ✓ (dev aid), setup_wsl_dev.sh ✓, setup_macos_dev.sh ✓; Phase 5: benchmark_inference.py ☐, build.sh ☐ |
 | `docker/` | ☐ Dockerfile.training, Dockerfile.demo |
 | `tests/` | ✓ Python: organise / validate / split / BowlDataset / augmentations / train / export (41 tests); ✓ C++: Preprocessor / Postprocessor / BowlTracker / DebounceEngine + Smoke (25 tests); ☐ ONNX/TRT parity (needs real `.onnx`) |
-| `docs/` | DESIGN_REQUIREMENTS.md ✓, ARCHITECTURE.md ✓ |
+| `docs/` | DESIGN_REQUIREMENTS.md ✓, ARCHITECTURE.md ✓, BENCHMARKS.md ☐ (Phase 5 inference KPIs) |
 
 ---
 
@@ -244,7 +255,8 @@ The brightness threshold and low-light transform parameters are matched to the t
 | Bowl identity by x-coordinate | Yes | SORT/DeepSORT tracker | Camera is fixed overhead; x-ordering is stable and deterministic |
 | Debounce state in-memory | Yes | Redis / SQLite | Zero deps on Jetson; restart resets timers — acceptable for MVP |
 | C++17 inference service | Yes | Python FastAPI | Portfolio goal; no GIL; clean TRT integration |
-| ONNX on laptop / TRT on Jetson | Yes | TRT everywhere | TRT requires CUDA; laptop-first constraint demands ONNX for dev |
+| ONNX on laptop / TRT on Orin Nano | Yes | TRT everywhere | TRT requires CUDA; laptop-first constraint demands ONNX for dev |
+| Train on Windows AMD/ROCm, infer on Orin Nano | Yes | Train on Orin Nano GPU | ROCm PyTorch exposes the same `cuda` API — no code changes. ONNX is the hardware-agnostic handoff. Dedicated training machine avoids shared-memory pressure on Orin Nano. |
 | cpp-httplib | Yes | Crow / Pistache | Header-only, zero external deps, two endpoints is all we need |
 | Telegram | Yes | SMTP / Pushover | Free, phone-native push, photo attachment in one API call |
 

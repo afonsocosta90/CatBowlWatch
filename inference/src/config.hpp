@@ -29,6 +29,10 @@ struct Config {
     // HTTP service
     int         http_port             = 8080;      // HTTP_PORT
 
+    // Telegram notification (Phase 4)
+    std::string telegram_bot_token;                // TELEGRAM_BOT_TOKEN (required for alerts)
+    std::string telegram_chat_id;                  // TELEGRAM_CHAT_ID   (required for alerts)
+
     static Config from_env() {
         Config c;
         auto get = [](const char* key) -> const char* { return std::getenv(key); };
@@ -43,6 +47,8 @@ struct Config {
         if (auto* v = get("ALERT_COOLDOWN_SECONDS"))   c.cooldown_ms             = std::stoll(v) * 1000;
         if (auto* v = get("DETECTION_HOLD_FRAMES"))    c.detection_hold_frames   = std::stoi(v);
         if (auto* v = get("HTTP_PORT"))                c.http_port               = std::stoi(v);
+        if (auto* v = get("TELEGRAM_BOT_TOKEN"))      c.telegram_bot_token      = v;
+        if (auto* v = get("TELEGRAM_CHAT_ID"))        c.telegram_chat_id        = v;
         return c;
     }
 };

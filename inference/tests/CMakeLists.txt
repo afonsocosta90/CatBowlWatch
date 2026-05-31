@@ -20,3 +20,13 @@ target_link_libraries(catbowlwatch_unit_tests PRIVATE
     GTest::gtest_main
 )
 gtest_discover_tests(catbowlwatch_unit_tests)
+
+# Phase 4 TelegramNotifier unit tests (no network required — HTTP is injected)
+add_executable(catbowlwatch_notifier_tests
+    test_telegram_notifier.cpp
+)
+target_link_libraries(catbowlwatch_notifier_tests PRIVATE
+    catbowlwatch_lib
+    GTest::gtest_main
+)
+gtest_discover_tests(catbowlwatch_notifier_tests)

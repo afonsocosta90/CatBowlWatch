@@ -11,6 +11,7 @@
 #include "bowl_tracker.hpp"
 #include "debounce_engine.hpp"
 #include "http_server.hpp"
+#include "telegram_notifier.hpp"
 
 #include <spdlog/spdlog.h>
 #include <chrono>
@@ -31,6 +32,8 @@ int main() {
     spdlog::info("  debounce:  {}s   cooldown: {}s",
                  config.debounce_ms / 1000, config.cooldown_ms / 1000);
     spdlog::info("  http port: {}", config.http_port);
+    spdlog::info("  telegram:  {}",
+                 config.telegram_bot_token.empty() ? "not configured" : "configured");
 
     cbw::Capture           capture(config.video_source);
     cbw::Preprocessor      preprocessor(config.brightness_threshold,
@@ -41,6 +44,7 @@ int main() {
     cbw::BowlTracker       tracker(config.detection_hold_frames);
     cbw::DebounceEngine    debounce(config.debounce_ms, config.cooldown_ms);
     cbw::HttpServer        http_server(config.http_port);
+    cbw::TelegramNotifier  notifier(config.telegram_bot_token, config.telegram_chat_id);
 
     http_server.start();
 
@@ -56,9 +60,12 @@ int main() {
         auto states      = tracker.update(detections);
 
         if (tracker.is_registered()) {
-            for (const auto& alert : debounce.update(states))
-                spdlog::warn("ALERT: {} empty — Phase 4 will send Telegram notification",
-                             alert.bowl_id);
+            for (const auto& alert : debounce.update(states)) {
+                spdlog::warn("ALERT: {} empty for {}s — sending Telegram notification",
+                             alert.bowl_id,
+                             (alert.timestamp_ms - alert.empty_since_ms) / 1000);
+                notifier.send(alert, frame);
+            }
         }
 
         ++fps_count;

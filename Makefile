@@ -23,7 +23,7 @@ INTERVAL     ?= 1.0
 
 VIDEO_EXTS := mp4 mov m4v MP4 MOV M4V
 
-.PHONY: help collect organise validate split data clean-data train export-onnx test
+.PHONY: help collect organise validate split data clean-data train export-onnx test benchmark
 
 help:  ## Show available targets.
 	@awk -F':.*?## ' '/^[a-zA-Z_-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -65,3 +65,6 @@ export-onnx:  ## Export trained .pt → ONNX opset 17 (verifies shape). Requires
 
 test:  ## Run unit tests.
 	$(PYTHON) -m pytest tests/ -v
+
+benchmark:  ## Run inference KPI benchmark. Requires MODEL and BACKEND vars.
+	$(PYTHON) scripts/benchmark_inference.py --model $(MODEL) --backend $(BACKEND) $(BENCHMARK_ARGS)

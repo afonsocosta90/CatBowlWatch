@@ -20,6 +20,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **What's left for Phase 1b:** capture iPhone footage, label in Roboflow, unzip to `data/raw/labelled/`, run `make data`. Exit at ≥ 200 labelled images + `data/videos/sample_video.mp4` committed.
 
+**Phase 4a — done:**
+- `inference/src/telegram_notifier.hpp` + `telegram_notifier.cpp` ✓ — libcurl `POST /sendPhoto` multipart, 3× retry with injectable `HttpPostFn`, dedicated worker thread, `stop()` drains before join. `format_caption()` is static + testable. No-op when credentials empty.
+- 12 GoogleTest cases in `inference/tests/test_telegram_notifier.cpp` ✓ — all network-free (injected mock). Covers: caption format, no-op paths, retry count, credential pass-through, JPEG bytes, queue draining, `stop()` safety.
+- `inference/src/types.hpp` updated: `AlertEvent` gains `empty_since_ms` field.
+- `inference/src/service_main.cpp` updated: `TelegramNotifier` wired from `Config::telegram_bot_token/chat_id`.
+- `inference/CMakeLists.txt` updated: `find_package(CURL)` with macOS SDK fallback.
+- `inference/src/CMakeLists.txt` updated: `telegram_notifier.cpp` in catbowlwatch_lib, `CURL::libcurl` linked.
+
+**Point 7 (benchmark_inference.py) — done:**
+- `scripts/benchmark_inference.py` ✓ — pure-function helpers (`compute_stats`, `make_dummy_input`, `build_providers`, `format_markdown_row`) + lazy `onnxruntime` import; supports `onnx-cpu`, `onnx-cuda`, `trt-fp16`, `trt-int8`.
+- `tests/test_benchmark_inference.py` ✓ — 15 unit tests, all passing; no onnxruntime required.
+- `psutil` added to base Poetry dependencies.
+- `make benchmark MODEL=... BACKEND=...` target added to Makefile.
+
 **Phase 2 — done (scaffold complete; E2E training run gated on Phase 1b data):**
 - `training/augmentations.py` ✓ — low-light adaptive preprocessing (grayscale + CLAHE). Public API: `mean_brightness`, `low_light_transform`, `adaptive_low_light`, `LowLightAugmenter` (callable for `BowlDataset.transform`). Defaults (`BRIGHTNESS_THRESHOLD=50`, `CLAHE_CLIP_LIMIT=2.0`, `CLAHE_TILE_GRID=(8,8)`) MUST be mirrored by the C++ inference preprocessor in Phase 3 to keep train/inference distributions matched.
 - `training/train.py` ✓ — Ultralytics `YOLO.train` wrapper. CLI args via `parse_args`/`TrainConfig` dataclass. Copies `best.pt` to `models/catbowlwatch.pt` after training. `make train`. Lazy `ultralytics` import — module is importable without the training group installed.
@@ -129,7 +143,7 @@ Capture → Preprocessor → YOLOv8n → Postprocessor → Bowl Tracker → Debo
                                                           └→ HTTP service (/status, /photo)
 ```
 
-**Capture:** `cv::VideoCapture` on laptop; GStreamer `nvarguscamerasrc` on Jetson (Phase 5 swap — interface identical, single `read(frame)` call).
+**Capture:** `cv::VideoCapture` on laptop; GStreamer `nvarguscamerasrc` on Orin Nano (Phase 5 swap — interface identical, single `read(frame)` call).
 
 **Preprocessor:** outputs `float32 [1,3,640,640]`, RGB, `[0,1]`. If mean frame brightness < `BRIGHTNESS_THRESHOLD` (default 50/255), apply low-light transform (grayscale → 3-channel + CLAHE). On Jetson this also triggers a GPIO IR floodlight. The same transform parameters are used in training-time augmentation so train and inference see the same distribution.
 
@@ -143,7 +157,7 @@ Capture → Preprocessor → YOLOv8n → Postprocessor → Bowl Tracker → Debo
 
 **Telegram notifier:** `POST /sendPhoto` multipart via libcurl. 3× retry with 2 s backoff. Dedicated thread — never blocks inference.
 
-**ONNX ↔ TensorRT swap:** Abstract `InferenceBackend` interface with `OnnxBackend` and `TrtBackend`. Selected via `INFERENCE_BACKEND=onnx|tensorrt`. `TrtBackend` is compiled only with `-DWITH_TENSORRT=ON`; laptop builds always use `-DWITH_TENSORRT=OFF` (NvInfer.h is unavailable without CUDA).
+**ONNX ↔ TensorRT swap:** Abstract `InferenceBackend` interface with `OnnxBackend` and `TrtBackend`. Selected via `INFERENCE_BACKEND=onnx|tensorrt`. `TrtBackend` compiled only with `-DWITH_TENSORRT=ON` (requires TRT 10.x / JetPack 6.x on Orin Nano); laptop builds always use `-DWITH_TENSORRT=OFF`.
 
 ## Environment Variables
 
@@ -165,12 +179,12 @@ All runtime config via env vars (see `demo/.env.example` for full list):
 
 ## Key Constraints
 
-- **Laptop-first:** Every component must run on macOS or Ubuntu 22.04 CPU with no GPU until the Jetson arrives. No CUDA dependency in laptop builds.
+- **Laptop-first (Phases 1–4):** Every inference, notification, and demo component must run on macOS or Ubuntu 22.04 CPU with no GPU. Training runs on a separate Windows AMD/ROCm machine (ROCm venv — not the Poetry `training` group); ONNX export is the hardware-agnostic handoff to the Orin Nano. No CUDA dependency in laptop builds.
 - **No manual ROI:** Bowl detection is fully automatic via YOLOv8n — never add hardcoded region-of-interest parameters.
 - **MVP scope only:** Do not implement multi-camera, historical logging, web dashboard, cat identification, or audio alerts. Deferred list in `docs/DESIGN_REQUIREMENTS.md §8`.
 - **Required libraries:** `spdlog` ≥ 1.12 (header-only) for all C++ service logging; `libcurl` ≥ 7.68 for the Telegram client.
 - **ONNX/TRT parity acceptance:** On a 50-image held-out val set — matched-detection IoU > 0.90, class agreement > 98%, mAP50 delta ≤ 3 pp.
-- **Input resolution:** 640×640 by default. Switch to 416×416 only if 30 FPS is required on Jetson (TRT FP16 at 640×640 measures 12–18 FPS on Nano 4GB; a stationary bowl rarely needs more).
+- **Input resolution:** 640×640 default. 416×416 fallback not required — Orin Nano Ampere GPU meets the ≥ 30 FPS target at 640×640 with TRT FP16.
 - **Terminology:** The brightness-triggered preprocessing path is "low-light adaptive preprocessing" — **not "sensor fusion"**. There is only one sensor.
 - **Config, not constants:** Thresholds (`CONFIDENCE_THRESHOLD`, `IOU_THRESHOLD`, `DEBOUNCE_SECONDS`, etc.) are env-driven. Never hardcode them in source.
 

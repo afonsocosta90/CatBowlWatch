@@ -8,6 +8,7 @@ add_library(catbowlwatch_lib STATIC
     bowl_tracker.cpp
     debounce_engine.cpp
     http_server.cpp
+    telegram_notifier.cpp
 )
 
 target_link_libraries(catbowlwatch_lib PUBLIC
@@ -16,6 +17,7 @@ target_link_libraries(catbowlwatch_lib PUBLIC
     httplib::httplib
     onnxruntime
     ${OpenCV_LIBS}
+    CURL::libcurl
 )
 
 target_include_directories(catbowlwatch_lib PUBLIC

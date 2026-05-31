@@ -1,12 +1,12 @@
 # CatBowlWatch
 
-**Edge ML pipeline — Jetson Nano 4GB + CSI camera → YOLOv8n → C++17 service → Telegram alert.**
+**Edge ML pipeline — Orin Nano + CSI camera → YOLOv8n → C++17 service → Telegram alert.**
 
 Two cat food bowls. One camera. Fully automatic detection, no manual ROI. When either bowl has been empty for ≥ 60 consecutive seconds the system sends a Telegram photo + text notification to your phone.
 
-Built as a portfolio piece demonstrating end-to-end ML-to-C++ edge deployment: data collection, training, ONNX inference, debounce logic, real-time notification, and hardware deployment on Jetson Nano — all from scratch.
+Built as a portfolio piece demonstrating end-to-end ML-to-C++ edge deployment: data collection, GPU training (Windows AMD/ROCm), ONNX inference, debounce logic, real-time notification, and TensorRT-benchmarked deployment on Orin Nano — all from scratch.
 
-> **Status (2026-05-19):** Phases 1a, 2, and 3 are complete. Phase 1b (iPhone footage + Roboflow labelling → ≥ 200 images) is the active data-collection work. The full C++17 inference service (Capture → Preprocessor → OnnxBackend → Postprocessor → BowlTracker → DebounceEngine → HttpServer) is implemented and **25 C++ unit tests pass** on macOS Apple Silicon and WSL2 Ubuntu. The service binary is ready; it needs `MODEL_PATH` pointing to a trained `.onnx` (gated on Phase 1b).
+> **Status (2026-05-31):** Phases 1a, 2, 3, and **4a (TelegramNotifier)** are complete. Phase 1b (iPhone footage + Roboflow labelling → ≥ 200 images) is the active data-collection work. The full C++17 inference service including `TelegramNotifier` (libcurl `POST /sendPhoto`, 3× retry, dedicated thread) is wired in; **37 C++ unit tests pass** on macOS Apple Silicon and WSL2 Ubuntu. `scripts/benchmark_inference.py` (Phase 5 KPI tool) is complete with **15 Python tests** passing. **Training runs on a Windows PC with AMD GPU + ROCm PyTorch**; ONNX is the hardware-agnostic handoff to the Orin Nano. The service binary needs `MODEL_PATH` pointing to a trained `.onnx` (gated on Phase 1b).
 
 ---
 
@@ -48,15 +48,16 @@ flowchart TD
 
 ## Tech Stack
 
-| Layer | Laptop (Dev) | Jetson (Prod) |
+| Layer | Laptop (Dev) | Orin Nano (Prod) |
 |---|---|---|
+| Training | Windows PC — AMD GPU, ROCm PyTorch venv | — (ONNX artifact is the handoff) |
 | Capture | OpenCV `VideoCapture` | GStreamer + `nvarguscamerasrc` |
 | Model | YOLOv8n `.onnx` | YOLOv8n `.engine` (TensorRT FP16) |
-| Runtime | ONNX Runtime CPU | TensorRT 8.x |
+| Runtime | ONNX Runtime CPU | TensorRT 10.x |
 | Service | C++17 + cpp-httplib | Same binary, systemd unit |
 | Notification | Telegram Bot API | Same |
 | Low-light | Brightness sim (software) | IR floodlight + GPIO trigger |
-| OS | macOS / Ubuntu 22.04 | JetPack TBD (B01 → 4.6.4; Orin Nano → 6.x) |
+| OS | macOS / Ubuntu 22.04 | JetPack 6.x (Ubuntu 22.04) |
 | Python deps | Poetry (`pyproject.toml`); base + optional `training` group | Same |
 | Build | `make` (Phase 1 dataset pipeline) | + CMake for C++ service |
 
@@ -83,7 +84,8 @@ catbowlwatch/
 │   ├── validate_labels.py ✓    # YOLO label sanity check
 │   ├── split_dataset.py ✓      # seeded 70/15/15 split + data.yaml writer
 │   ├── setup_wsl_dev.sh ✓      # WSL2 Ubuntu C++ toolchain bootstrap
-│   └── setup_macos_dev.sh ✓    # macOS (Apple Silicon / Intel) C++ toolchain bootstrap
+│   ├── setup_macos_dev.sh ✓    # macOS (Apple Silicon / Intel) C++ toolchain bootstrap
+│   └── benchmark_inference.py ✓  # Phase 5 — ONNX-CPU / ONNX-CUDA / TRT FP16 KPI benchmark (Orin)
 ├── training/
 │   ├── dataset.py ✓        # PyTorch BowlDataset
 │   ├── augmentations.py ✓  # low-light adaptive preprocessing (CLAHE, matches C++ Preprocessor)
@@ -102,10 +104,11 @@ catbowlwatch/
 │   │   ├── bowl_tracker ✓      # x-coord identity, registration warm-up, hold frames
 │   │   ├── debounce_engine ✓   # 60s/300s per-bowl timers, injectable clock
 │   │   ├── http_server ✓       # GET /status (JSON) + GET /photo (JPEG), mutex-safe
+│   │   ├── telegram_notifier ✓ # Phase 4a — libcurl POST /sendPhoto, 3× retry, dedicated thread
 │   │   ├── service_main.cpp ✓  # real service entry point (needs MODEL_PATH)
 │   │   └── main.cpp ✓          # toolchain smoke binary (CI validator)
-│   └── tests/ ✓                # 25 GoogleTest cases (Preprocessor/Postprocessor/BowlTracker/DebounceEngine)
-├── notification/           ☐ Phase 4 — Telegram notifier
+│   └── tests/ ✓                # 37 GoogleTest cases (Phase 3: 25 + Phase 4a TelegramNotifier: 12)
+├── notification/           (placeholder — TelegramNotifier is in inference/src/)
 ├── deployment/             ☐ Phase 5 — GStreamer config, systemd, GPIO
 ├── demo/
 │   └── .env.example ✓      # Telegram + inference env vars
@@ -114,7 +117,8 @@ catbowlwatch/
 ├── tests/ ✓                # 41 Python unit tests (Phase 1+2); 25 C++ unit tests (Phase 3)
 ├── docs/
 │   ├── DESIGN_REQUIREMENTS.md ✓
-│   └── ARCHITECTURE.md ✓
+│   ├── ARCHITECTURE.md ✓
+│   └── BENCHMARKS.md ☐         # Phase 5 — committed inference KPI results (all 4 backends)
 ├── .github/workflows/      ☐ Phase 2+ — CI (lint, tests, ONNX validation)
 ├── README.md ✓
 ├── CLAUDE.md ✓             # dev context (architecture, commands, constraints)
@@ -132,8 +136,9 @@ catbowlwatch/
 | 1b | Phase 1 data capture & labelling (≥ 200 images + sample video) | Laptop | **In Progress** |
 | 2 | Training Pipeline (`augmentations.py`, `train.py`, `export.py`) | Laptop / Colab | ✓ Done (gated on 1b data for E2E run) |
 | 3 | Inference Service (C++17, ONNX) — full pipeline + 25 unit tests | Laptop (macOS + WSL2) | ✓ Done (needs trained model to run E2E) |
-| 4 | Notification (TelegramNotifier + libcurl) & Demo (Docker) | Laptop | **Next** |
-| 5 | Hardware Deployment & TensorRT Swap | Jetson Nano | Pending hardware |
+| 4a | TelegramNotifier (C++ libcurl `POST /sendPhoto`, 3× retry, 12 unit tests) | Laptop | ✓ Done |
+| 4b | Docker demo (`docker/demo.yml` looping `sample_video.mp4`) | Laptop | **Next** |
+| 5 | Hardware Deployment & KPI Benchmark | Orin Nano | Hardware in hand — entry gated on Phase 4 |
 
 Phase boundaries and exit criteria: [docs/DESIGN_REQUIREMENTS.md §9](docs/DESIGN_REQUIREMENTS.md).
 
@@ -163,8 +168,15 @@ Override the split ratios or seed: `make split SPLIT_RATIOS="0.8 0.1 0.1" SEED=7
 **Phase 1b + 2 E2E run (parallel track):**
 
 - Record iPhone footage → label in Roboflow (≥ 200 images) → `make data`
-- `poetry install --with training` → `make train` → `make export-onnx` → `models/catbowlwatch.onnx`
+- On **Windows AMD/ROCm machine**: activate ROCm venv → `python training/train.py` → `python training/export.py` → `models/catbowlwatch.onnx`
+  - (macOS/Linux fallback: `poetry install --with training && make train && make export-onnx`)
 - Then run the Phase 3 service: `MODEL_PATH=models/catbowlwatch.onnx VIDEO_SOURCE=data/videos/sample_video.mp4 ./inference/build/src/catbowlwatch`
+
+**Phase 5 preview (Orin Nano — after Phase 4):**
+
+- Copy `catbowlwatch.onnx` to Orin Nano → compile TRT FP16 engine on-device
+- `python scripts/benchmark_inference.py` — benchmark all 4 backends (`onnx-cpu`, `onnx-cuda`, `trt-fp16`, `trt-int8`)
+- Commit results to `docs/BENCHMARKS.md`
 
 ---
 

@@ -29,7 +29,7 @@ std::vector<AlertEvent> DebounceEngine::update(const std::array<BowlState, 2>& s
                            (now - last_alert_ms_[i]) >= cooldown_ms_;
 
         if (debounce_ok && cooldown_ok) {
-            alerts.push_back({s.bowl_id, now});
+            alerts.push_back({s.bowl_id, now, s.empty_since_ms});
             last_alert_ms_[i] = now;
         }
     }

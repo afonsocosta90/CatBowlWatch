@@ -1,7 +1,7 @@
 # CatBowlWatch — Design Requirements
 
-> **Status:** Phase 1 — Data Collection. Phase 1a (plumbing) done; Phase 1b (data capture & labelling) in progress.
-> **Last updated:** 2026-05-19
+> **Status:** Phases 1a, 2, and 3 done. Phase 1b (data capture & labelling) in progress. Phase 4 (Notification + Demo) is next. Orin Nano hardware in hand.
+> **Last updated:** 2026-05-31
 
 ---
 
@@ -50,12 +50,13 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 | ID | Requirement | Target |
 |---|---|---|
 | NFR-1 | Inference latency (ONNX CPU, laptop) | ≤ 200 ms / frame |
-| NFR-2 | Inference latency (TensorRT FP16, Jetson) | ≥ 20 FPS @ 640×640; or ≥ 30 FPS @ 416×416. (YOLOv8n TRT FP16 on Jetson Nano 4GB measures 12–18 FPS at 640×640 — use 416×416 if 30 FPS is required. A stationary cat bowl does not need >20 FPS.) |
+| NFR-2 | Throughput (TensorRT FP16, Orin Nano) | ≥ 30 FPS @ 640×640. Orin Nano Ampere GPU significantly exceeds the old Nano 4GB baseline of 12–18 FPS. 416×416 fallback not required. Measured via `scripts/benchmark_inference.py`. |
 | NFR-3 | False-positive alert rate | < 1 per day under normal lighting |
 | NFR-4 | Service memory footprint (Jetson) | ≤ 512 MB RSS |
 | NFR-5 | Cold-start time (service ready, Jetson) | ≤ 10 s |
 | NFR-6 | Uptime (systemd watchdog, Jetson) | ≥ 99.5% over 30-day window |
 | NFR-7 | Dev loop: train → ONNX export → inference test | ≤ 5 min end-to-end |
+| NFR-8 | Inference benchmark coverage (Orin Nano) | All 4 backends benchmarked (`onnx-cpu`, `onnx-cuda`, `trt-fp16`, `trt-int8`); FPS + mean latency + P99 latency + RSS committed to `docs/BENCHMARKS.md` |
 
 ---
 
@@ -63,9 +64,10 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 
 | Item | Specification |
 |---|---|
-| Target SBC | NVIDIA Jetson Nano 4GB (**JetPack version TBD** — confirm with `cat /etc/nv_tegra_release` on receipt. Original B01 → JetPack 4.6.4 / CUDA 10.2 / Ubuntu 18.04. Orin Nano → JetPack 6.x / CUDA 12.x / Ubuntu 22.04.) |
+| Target SBC | NVIDIA Orin Nano (JetPack 6.x / CUDA 12.x / TensorRT 10.x / Ubuntu 22.04) |
+| Training machine | Windows 11 PC, AMD GPU, ROCm PyTorch venv (not the Poetry `training` group). `train.py` and `export.py` run unchanged — ROCm exposes itself as `cuda` to PyTorch. ONNX is the hardware-agnostic handoff to the Orin Nano. |
 | Camera | Raspberry Pi CSI IMX219 |
-| Inference runtime (prod) | TensorRT 8.x, FP16 |
+| Inference runtime (prod) | TensorRT 10.x, FP16 |
 | Inference runtime (dev) | ONNX Runtime ≥ 1.17, CPU |
 | IR illumination | IR floodlight, GPIO-triggered at low ambient brightness |
 | Network | Wi-Fi or Ethernet; Telegram API reachable |
@@ -73,7 +75,7 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 | C++ logging | spdlog ≥ 1.12 (header-only, MIT) — required for structured service logging on headless Jetson |
 | HTTP client (notification) | libcurl ≥ 7.68 — required for Telegram `POST /sendPhoto` multipart from C++ (or use Python subprocess — see ARCHITECTURE.md §4.8) |
 
-**Laptop-first constraint:** Until the Jetson arrives, every component — inference, notification, demo — must run on a development laptop (macOS or Ubuntu 22.04) with no GPU required.
+**Laptop-first constraint (Phases 1–4):** All inference, notification, and demo components must run on a development laptop (macOS or Ubuntu 22.04) with no GPU required. Training is handled separately on the Windows AMD/ROCm machine; ONNX export is the hardware-agnostic handoff to the Orin Nano.
 
 ---
 
@@ -81,7 +83,7 @@ CatBowlWatch monitors two cat food bowls using a single overhead camera. It dete
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Architecture | YOLOv8n | Smallest YOLOv8 variant; fits Jetson Nano 4GB at FP16; TensorRT-friendly |
+| Architecture | YOLOv8n | Smallest YOLOv8 variant; fits Orin Nano at TRT FP16; TensorRT-friendly |
 | Export format (dev) | ONNX opset 17 | Portable, CPU-runnable, no NVIDIA dependency during development |
 | Export format (prod) | TensorRT engine (FP16) | 3–5× speedup over ONNX on Jetson; required to meet NFR-2 |
 | Classes | `bowl_empty`, `bowl_not_empty` | Detection + classification in one pass; no separate classifier network |
@@ -173,7 +175,7 @@ These are explicitly deferred. Do not add them to the inference service.
 | 0 | Documentation | Project kick-off | README + DESIGN_REQUIREMENTS + ARCHITECTURE complete | ✅ Done |
 | 1a | Phase 1 plumbing | Phase 0 done | Poetry env (`pyproject.toml`); Makefile; `organise_raw.py` + `validate_labels.py` + `split_dataset.py`; ≥ 20 unit tests green | ✅ Done (2026-05-19) |
 | 1b | Phase 1 data capture & labelling | Phase 1a done | ≥ 200 labelled images (YOLO format) in `data/{images,labels}/{train,val,test}/`; `data/data.yaml` committed; `data/videos/sample_video.mp4` committed | 🔄 In Progress |
-| 2 | Training Pipeline | Phase 1b done | `training/train.py` trains YOLOv8n to `mAP50 ≥ 0.80`; `training/export.py` produces `catbowlwatch.onnx` (opset 17) with shape `[1, 6, 8400]`; ONNX-vs-runtime parity tests pass | Planned |
-| 3 | Inference Service | Phase 2 done | C++17 service processes video, fires debounce, `/status` + `/photo` respond; ONNX backend on laptop | Planned |
-| 4 | Notification & Demo | Phase 3 done | Telegram alert delivered end-to-end from video input on laptop; `docker compose -f docker/demo.yml up` runs the demo | Planned |
-| 5 | Hardware Deployment | Jetson in hand | ≥ 30 FPS via TensorRT; systemd survives reboot; GPIO IR floodlight wired | Pending hardware |
+| 2 | Training Pipeline | Phase 1b done | `training/train.py` trains YOLOv8n to `mAP50 ≥ 0.80`; `training/export.py` produces `catbowlwatch.onnx` (opset 17) with shape `[1, 6, 8400]`; ONNX-vs-runtime parity tests pass | ✅ Done (2026-05-19) — E2E run gated on Phase 1b data |
+| 3 | Inference Service | Phase 2 done | C++17 service processes video, fires debounce, `/status` + `/photo` respond; ONNX backend on laptop | ✅ Done (2026-05-19) — needs `MODEL_PATH` for E2E |
+| 4 | Notification & Demo | Phase 3 done | Telegram alert delivered end-to-end from video input on laptop; `docker compose -f docker/demo.yml up` runs the demo | 🔜 Next |
+| 5 | Hardware Deployment & KPI Benchmark | Orin Nano in hand | ≥ 30 FPS TRT FP16 @ 640×640; all 4 backends benchmarked in `docs/BENCHMARKS.md`; systemd survives reboot | Entry gated on Phase 4 |
